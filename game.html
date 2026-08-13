@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#dff0ea">
+<title>Драконий бег</title>
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #cfe6dd;
+  font: 16px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #22312c;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Игра занимает весь экран; всё остальное лежит поверх холста. */
+#wrap { position: relative; width: 100%; height: 100%; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+#hud {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 0; right: 0;
+  display: flex;
+  gap: 14px;
+  padding: 0 14px;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: #2c4740;
+  pointer-events: none;
+}
+#best { margin-left: auto; opacity: .65; }
+
+/* Панель со сменой персонажей. Прячется во время бега, чтобы не мешать. */
+#studio {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  transition: opacity .25s ease;
+}
+#studio .slots { display: flex; justify-content: center; gap: 8px; }
+
+/* Список существ. Раскрывается вверх: он и так у нижнего края. */
+#beasts { position: relative; }
+#beastBtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid #a9c9bd;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .88);
+  color: #2c4740;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+#beastBtn canvas { width: 46px; height: 34px; }
+#beastBtn i { font-style: normal; opacity: .5; font-size: 11px; }
+#beastBtn:active { transform: scale(.97); }
+
+#beastList {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  min-width: 168px;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid #a9c9bd;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 10px 26px rgba(20, 50, 40, .18);
+}
+#beastList button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px 4px 4px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: #2c4740;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+#beastList button.on { background: #e3f0ea; }
+#beastList canvas { width: 46px; height: 34px; flex: 0 0 auto; }
+#studio.hide { opacity: 0; pointer-events: none; }
+
+.slot {
+  flex: 0 0 auto;
+  width: 72px;
+  padding: 6px 4px 5px;
+  border: 1px solid #a9c9bd;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .82);
+  color: #2c4740;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+}
+.slot canvas { width: 100%; height: 40px; }
+.slot span { display: block; margin-top: 2px; opacity: .7; }
+.slot:active { transform: scale(.95); }
+
+#msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 0 24px;
+  pointer-events: none;
+}
+#msg b { font-size: 26px; font-weight: 600; }
+#msg small { font-size: 14px; opacity: .7; }
+#msg.gone { display: none; }
+
+input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="score">0</div>
+    <div id="best">рекорд 0</div>
+  </div>
+
+  <div id="msg">
+    <b>Драконий бег</b>
+    <small>тап или пробел — прыжок</small>
+    <small style="opacity:.45">версия 2 · дракон кодом</small>
+  </div>
+
+  <div id="studio">
+    <div id="beasts">
+      <button id="beastBtn"><canvas></canvas><b></b><i>▴</i></button>
+      <div id="beastList" hidden></div>
+    </div>
+    <div class="slots">
+      <button class="slot" data-slot="hero"><canvas></canvas><span>герой</span></button>
+      <button class="slot" data-slot="rock"><canvas></canvas><span>кочка</span></button>
+      <button class="slot" data-slot="bird"><canvas></canvas><span>летун</span></button>
+    </div>
+  </div>
+
+  <input type="file" id="pick" accept="image/*">
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var cv = document.getElementById('game');
+  var ctx = cv.getContext('2d');
+  var W = 0, H = 0, DPR = 1;
+
+  /* --- размеры ---------------------------------------------------------
+     Холст держим в CSS-пикселях: рисовать удобнее в них, а чёткость даёт
+     масштаб контекста под плотность экрана. */
+  function fit() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = cv.clientWidth;
+    H = cv.clientHeight;
+    cv.width = Math.round(W * DPR);
+    cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ground = Math.min(H - 70, H * 0.78);
+  }
+  window.addEventListener('resize', fit);
+
+  /* --- мир ------------------------------------------------------------- */
+
+  var ground = 0;          // высота земли в пикселях от верха
+  var state = 'menu';      // menu | run | over
+  var score = 0, best = 0, speed = 0, dist = 0, night = 0;
+  var hero = null, things = [], puffs = [], last = 0, spawnIn = 0;
+
+  var G = 2100;            // ускорение падения, px/с²
+  var JUMP = -860;         // толчок вверх
+  var HERO_H = 190;        // рост героя
+  var HERO_W = 62;         // ширина, по которой считаются столкновения
+
+  try { best = parseInt(localStorage.getItem('run-best') || '0', 10) || 0; }
+  catch (e) { best = 0; }
+
+  function reset() {
+    score = 0; dist = 0; speed = 250; night = 0;
+    things = []; puffs = [];
+    spawnIn = 900;   // фора на старте: первое препятствие не в лицо
+    // fly — насколько герой «в воздухе» с точки зрения анимации: не
+    // прыгнул/не прыгнул, а плавная величина 0..1. По ней раскрываются
+    // крылья и поджимаются лапы, иначе переход выглядит как рывок.
+    hero = { x: 0, y: 0, vy: 0, onGround: true, hold: false, t: 0, fly: 0 };
+  }
+
+  /* --- спрайты ---------------------------------------------------------
+     Слот пустой — персонажа рисует код. Загрузили картинку — она встаёт
+     на его место, а движение остаётся тем же: наклон, подскок, сжатие.
+     Так рисунок оживает, даже если он один-единственный. */
+  var slots = { hero: null, rock: null, bird: null };
+
+  // Герой по умолчанию. Пусто — значит рисует код: чужие рисунки в
+  // открытый репозиторий не кладём. Свой можно подставить сюда строкой
+  // data:image/png;base64,… или загрузить прямо в игре, через слот.
+  var DRAKON = '';
+
+  // ?code в адресе — показать всех, кого рисует код, не трогая слоты.
+  // Удобно дать ссылку и не объяснять, где что нажимать.
+  var CODE = /(^|[?&#])code\b/.test(location.search + location.hash);
+
+  function loadSlots() {
+    Object.keys(slots).forEach(function (k) {
+      if (CODE) { slots[k] = null; return; }
+      var src = null;
+      try { src = localStorage.getItem('run-sprite-' + k); } catch (e) { src = null; }
+      // 'none' — слот очищен намеренно. Без этой пометки при каждой
+      // загрузке в героя снова падал бы рисунок по умолчанию, и сброс
+      // жил только до перезагрузки.
+      if (src === 'none') { slots[k] = null; return; }
+      if (!src && k === 'hero') { src = DRAKON; }
+      if (!src) { return; }
+      var img = new Image();
+      img.onload = function () { slots[k] = img; drawChips(); };
+      img.src = src;
+    });
+  }
+
+  /* --- ввод ------------------------------------------------------------ */
+
+  function jump() {
+    if (state === 'menu') { start(); return; }
+    if (state === 'over') { start(); return; }
+    if (!hero.onGround) { return; }
+    hero.vy = JUMP;
+    hero.onGround = false;
+    hero.hold = true;
+    for (var i = 0; i < 9; i++) { puff(64, ground); }
+  }
+
+  function release() {
+    // Отпустил рано — прыжок ниже. Короткий тап и долгое нажатие должны
+    // ощущаться по-разному, иначе управление кажется деревянным.
+    hero.hold = false;
+    if (hero && hero.vy < -360) { hero.vy = -360; }
+  }
+
+  cv.addEventListener('pointerdown', function (e) { e.preventDefault(); jump(); });
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', release);
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+      e.preventDefault(); jump();
+    }
+  });
+  window.addEventListener('keyup', function (e) {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { release(); }
+  });
+
+  function start() {
+    reset();
+    state = 'run';
+    document.getElementById('msg').className = 'gone';
+    document.getElementById('studio').className = 'hide';
+    beastList.hidden = true;
+    last = 0;
+  }
+
+  function over() {
+    state = 'over';
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('run-best', String(best)); } catch (e) { /* приват — не беда */ }
+    }
+    var m = document.getElementById('msg');
+    m.className = '';
+    m.innerHTML = '<b>' + score + '</b><small>рекорд ' + best + ' · тап — ещё раз</small>';
+    document.getElementById('studio').className = '';
+  }
+
+  /* --- препятствия ----------------------------------------------------- */
+
+  function spawn() {
+    // Летун появляется только когда уже разогнались: на медленной
+    // скорости он получается несправедливым.
+    var flying = speed > 330 && Math.random() < 0.3;
+    if (flying) {
+      things.push({
+        kind: 'bird', x: W + 40, y: ground - 96 - Math.random() * 38,
+        w: 56, h: 44, t: Math.random() * 6
+      });
+    } else {
+      var big = Math.random() < 0.35;
+      things.push({
+        kind: 'rock', x: W + 40, y: ground,
+        w: big ? 48 : 34, h: big ? 62 : 42, t: 0
+      });
+    }
+    // Зазор считаем во времени, а не в пикселях: иначе на разгоне
+    // препятствия сходятся в непроходимую стену.
+    spawnIn = (0.85 + Math.random() * 0.75) * (420 / speed) * 1000;
+  }
+
+  function puff(x, y) {
+    puffs.push({ x: x + Math.random() * 16, y: y - Math.random() * 6,
+                 r: 3 + Math.random() * 5, a: .5 });
+  }
+
+  /* --- столкновения ----------------------------------------------------
+     Прямоугольники ужимаем: по краям рисунка почти всегда пустота, и без
+     запаса игра «убивает» за промах, которого не видно. */
+  function hits(a, b) {
+    var m = 6;
+    return a.x + m < b.x + b.w - m && a.x + a.w - m > b.x + m &&
+           a.y + m < b.y + b.h - m && a.y + a.h - m > b.y + m;
+  }
+
+  /* --- шаг мира -------------------------------------------------------- */
+
+  function step(dt) {
+    if (state !== 'run') { return; }
+
+    dist += speed * dt;
+    speed = Math.min(620, 250 + dist / 90);
+    score = Math.floor(dist / 22);
+    night = (Math.sin(dist / 2600) + 1) / 2;   // плавная смена времени суток
+
+    hero.t += dt * (speed / 250);
+    // Крылья раскрываются не мгновенно: тянемся к цели, а не прыгаем в неё.
+    hero.fly += ((hero.onGround ? 0 : 1) - hero.fly) * Math.min(1, dt * 7);
+    hero.vy += G * dt * (hero.hold && hero.vy < 0 ? 0.62 : 1);
+    hero.y += hero.vy * dt;
+    if (hero.y >= 0) { hero.y = 0; hero.vy = 0; hero.onGround = true; hero.hold = false; }
+
+    spawnIn -= dt * 1000;
+    if (spawnIn <= 0) { spawn(); }
+
+    // У каждого существа своя стать, поэтому рамка берётся от него.
+    var bw = slots.hero ? HERO_W : beast().w;
+    var bh = slots.hero ? HERO_H : beast().h;
+    var box = { x: 66, y: ground - bh + hero.y, w: bw, h: bh };
+    for (var i = things.length - 1; i >= 0; i--) {
+      var o = things[i];
+      o.x -= speed * dt;
+      o.t += dt;
+      var ob = { x: o.x, y: o.kind === 'bird' ? o.y : o.y - o.h, w: o.w, h: o.h };
+      if (hits(box, ob)) { return over(); }
+      if (o.x < -80) { things.splice(i, 1); }
+    }
+
+    for (var j = puffs.length - 1; j >= 0; j--) {
+      var p = puffs[j];
+      p.x -= speed * dt * 0.6;
+      p.a -= dt * 1.2;
+      p.r += dt * 8;
+      if (p.a <= 0) { puffs.splice(j, 1); }
+    }
+
+    document.getElementById('score').textContent = score;
+    document.getElementById('best').textContent = 'рекорд ' + Math.max(best, score);
+  }
+
+  /* --- рисование ------------------------------------------------------- */
+
+  function mix(a, b, k) {
+    return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * k) + ','
+                  + Math.round(a[1] + (b[1] - a[1]) * k) + ','
+                  + Math.round(a[2] + (b[2] - a[2]) * k) + ')';
+  }
+
+  function sky() {
+    var top = mix([223, 240, 234], [58, 74, 96], night);
+    var bot = mix([246, 240, 226], [92, 104, 122], night);
+    var g = ctx.createLinearGradient(0, 0, 0, ground);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bot);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, ground);
+
+    // Холмы за спиной едут медленнее героя — отсюда ощущение глубины.
+    var off = (dist * 0.25) % 420;
+    ctx.fillStyle = mix([176, 209, 194], [70, 88, 104], night);
+    for (var k = -1; k < W / 420 + 1; k++) {
+      var bx = k * 420 - off;
+      ctx.beginPath();
+      ctx.moveTo(bx, ground);
+      ctx.quadraticCurveTo(bx + 110, ground - 96, bx + 220, ground);
+      ctx.quadraticCurveTo(bx + 310, ground - 58, bx + 420, ground);
+      ctx.fill();
+    }
+  }
+
+  function land() {
+    ctx.fillStyle = mix([206, 190, 158], [64, 66, 74], night);
+    ctx.fillRect(0, ground, W, H - ground);
+    ctx.strokeStyle = mix([150, 134, 106], [40, 44, 52], night);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, ground + 1);
+    ctx.lineTo(W, ground + 1);
+    ctx.stroke();
+
+    // Камешки на дороге: без них скорость на глаз не читается.
+    ctx.fillStyle = mix([176, 158, 126], [52, 56, 64], night);
+    var off = dist % 90;
+    for (var i = -1; i < W / 90 + 1; i++) {
+      var x = i * 90 - off;
+      ctx.fillRect(x, ground + 14, 16, 3);
+      ctx.fillRect(x + 44, ground + 30, 9, 3);
+    }
+  }
+
+  /* --- дракон, нарисованный кодом --------------------------------------
+     Ростом втрое выше прежнего лисёнка. Собран не из готовых фигур, а из
+     костей: у каждой свой угол и длина, и каждая следующая начинается
+     там, где кончилась предыдущая. Бедро тянет за собой голень, голень —
+     стопу, крыло гнётся в плече и в запястье. Анимация задаёт только
+     углы — форма получается сама, поэтому бег и полёт это одно и то же
+     тело в разных позах, а не два разных рисунка.
+
+     Система координат: (0,0) — земля под драконом, x вперёд, y вверх
+     отрицательный. Скелет уложен в ширину HERO_W: то, что торчит за неё
+     (морда, хвост, крылья), висит выше препятствий и в столкновениях
+     не участвует. */
+
+  var DR = {
+    far:   '#3a2359',        // дальняя сторона тела — глубже в тень
+    farLo: '#4a2f6e',
+    body:  '#5b3a8e',
+    lit:   '#8159cc',        // освещённая спина
+    belly: '#d3b0f5',
+    ridge: '#b07de8',
+    web:   'rgba(154,101,216,.88)',
+    webFar:'rgba(96,60,148,.85)',
+    horn:  '#f0e6ff',
+    eye:   '#ffd23f'
+  };
+
+  function lerp(a, b, k) { return a + (b - a) * k; }
+
+  // Кость-капсула: отрезок с круглыми концами. Возвращает свой конец,
+  // чтобы следующей кости было от чего расти.
+  function bone(x, y, ang, len, w, col) {
+    var nx = x + Math.cos(ang) * len;
+    var ny = y + Math.sin(ang) * len;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = w;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+    return [nx, ny];
+  }
+
+  /* Задняя лапа: бедро -> голень -> стопа. swing качает её при беге,
+     tuck поджимает в полёте. */
+  function leg(hx, hy, swing, tuck, col) {
+    var th = lerp(1.75 + swing * 0.42, 2.55, tuck);
+    var sh = lerp(1.15 - swing * 0.62, -0.85, tuck);
+    var ft = lerp(0.2 + swing * 0.3, 0.1, tuck);
+    var knee = bone(hx, hy, th, 44, 17, col);
+    var ankle = bone(knee[0], knee[1], sh, 48, 12, col);
+    var toe = bone(ankle[0], ankle[1], ft, 18, 10, col);
+    // когти
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = DR.horn;
+    for (var i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(toe[0], toe[1]);
+      ctx.lineTo(toe[0] + 7 + i, toe[1] + 3 + i * 2.5);
+      ctx.stroke();
+    }
+  }
+
+  /* Передняя лапа — короткая, как у ящера. */
+  function arm(sx, sy, swing, tuck, col) {
+    var up = lerp(1.55 - swing * 0.4, 2.3, tuck);
+    var fo = lerp(0.95 + swing * 0.5, -1.0, tuck);
+    var el = bone(sx, sy, up, 22, 11, col);
+    var wr = bone(el[0], el[1], fo, 20, 8, col);
+    ctx.strokeStyle = DR.horn;
+    ctx.lineWidth = 2.5;
+    for (var i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(wr[0], wr[1]);
+      ctx.lineTo(wr[0] + 6 + i * 1.5, wr[1] + 4 + i * 3);
+      ctx.stroke();
+    }
+  }
+
+  /* Крыло: плечо -> предплечье -> три пальца, между ними натянута
+     перепонка. fly = 0 — сложено на спине, 1 — расправлено; flap — сам
+     взмах. Промежуточные значения дают раскрытие, а не переключение. */
+  function wing(rx, ry, fly, flap, col, web, k) {
+    k = k || 1;
+    var hA = lerp(3.35, -2.15 + flap * 0.42, fly);
+    var fA = lerp(-0.2, -0.55 + flap * 0.8, fly);
+    var hL = lerp(34, 52, fly) * k;
+    var fL = lerp(30, 58, fly) * k;
+
+    var ex = rx + Math.cos(hA) * hL, ey = ry + Math.sin(hA) * hL;
+    var wx = ex + Math.cos(fA) * fL, wy = ey + Math.sin(fA) * fL;
+
+    var f = [[lerp(3.30, 2.75 - flap * 0.18, fly), lerp(26, 72, fly) * k],
+             [lerp(3.42, 2.35 - flap * 0.14, fly), lerp(23, 64, fly) * k],
+             [lerp(3.54, 1.95 - flap * 0.10, fly), lerp(19, 52, fly) * k]];
+    var tip = [];
+    for (var i = 0; i < 3; i++) {
+      tip.push([wx + Math.cos(f[i][0]) * f[i][1],
+                wy + Math.sin(f[i][0]) * f[i][1]]);
+    }
+
+    // Перепонка: передняя кромка по костям, задняя — провисающими дугами
+    // между кончиками пальцев. Прямые линии выдали бы фанеру.
+    ctx.fillStyle = web;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(wx, wy);
+    ctx.lineTo(tip[0][0], tip[0][1]);
+    for (var j = 1; j < 3; j++) {
+      var px = (tip[j - 1][0] + tip[j][0]) / 2 - (wx - tip[j][0]) * 0.12;
+      var py = (tip[j - 1][1] + tip[j][1]) / 2 - (wy - tip[j][1]) * 0.12;
+      ctx.quadraticCurveTo(px, py, tip[j][0], tip[j][1]);
+    }
+    ctx.quadraticCurveTo((tip[2][0] + rx) / 2, (tip[2][1] + ry) / 2 + 10, rx, ry);
+    ctx.closePath();
+    ctx.fill();
+
+    bone(rx, ry, hA, hL, 9 * k, col);
+    bone(ex, ey, fA, fL, 7 * k, col);
+    for (var i2 = 0; i2 < 3; i2++) {
+      bone(wx, wy, f[i2][0], f[i2][1], 4.5 * k, col);
+    }
+  }
+
+  /* Голова целиком в своей системе координат: повернули один раз, дальше
+     рисуем прямо. */
+  function head(x, y, ang, glow) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+
+    // череп
+    ctx.fillStyle = DR.body;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 19, 15, 0, 0, 6.3);
+    ctx.fill();
+
+    // морда
+    ctx.beginPath();
+    ctx.moveTo(4, -11);
+    ctx.quadraticCurveTo(26, -12, 34, -3);
+    ctx.quadraticCurveTo(28, 5, 20, 6);
+    ctx.lineTo(4, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // нижняя челюсть светлее — иначе морда читается плоским пятном
+    ctx.fillStyle = DR.belly;
+    ctx.beginPath();
+    ctx.moveTo(3, 6);
+    ctx.quadraticCurveTo(18, 9, 27, 4);
+    ctx.quadraticCurveTo(16, 15, 2, 13);
+    ctx.closePath();
+    ctx.fill();
+
+    // рога, отведённые назад
+    ctx.strokeStyle = DR.horn;
+    ctx.lineCap = 'round';
+    [[-0.35, 30, 6], [-0.05, 22, 4.5]].forEach(function (h) {
+      ctx.lineWidth = h[2];
+      ctx.beginPath();
+      ctx.moveTo(-6, -9);
+      ctx.quadraticCurveTo(-14 - h[1] * 0.4, -14 - h[1] * 0.3,
+                           -8 - h[1], -18 - h[1] * 0.5 + h[0] * 10);
+      ctx.stroke();
+    });
+
+    // гребень на щеке
+    ctx.fillStyle = DR.ridge;
+    ctx.beginPath();
+    ctx.moveTo(-4, 4);
+    ctx.lineTo(-20, 14);
+    ctx.lineTo(-3, 12);
+    ctx.closePath();
+    ctx.fill();
+
+    // глаз: свечение делаем градиентом, а не тенью — предсказуемее и дешевле
+    var g = ctx.createRadialGradient(7, -4, 1, 7, -4, 13);
+    g.addColorStop(0, 'rgba(255,226,120,.95)');
+    g.addColorStop(1, 'rgba(255,210,63,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(7, -4, 13, 0, 6.3);
+    ctx.fill();
+
+    ctx.fillStyle = DR.eye;
+    ctx.beginPath();
+    ctx.ellipse(7, -4, 6, 5 * glow, 0, 0, 6.3);
+    ctx.fill();
+    ctx.fillStyle = '#2a1030';
+    ctx.beginPath();
+    ctx.ellipse(8.5, -4, 1.8, 4.4 * glow, 0, 0, 6.3);
+    ctx.fill();
+
+    // ноздря
+    ctx.fillStyle = '#31183f';
+    ctx.beginPath();
+    ctx.ellipse(27, -5, 2.2, 1.6, 0, 0, 6.3);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function dragon(t, run, fly, lift) {
+    var p = run ? t * 9 : t * 2.2;
+    var swing = Math.sin(p);
+    var flap = Math.sin(t * (fly > 0.5 ? 15 : 5));
+    var bob = run ? Math.sin(p * 2) * 3 : Math.sin(t * 2) * 1.5;
+
+    // Тень на земле: герой поднялся — она уменьшается и бледнеет.
+    var k = Math.max(0, 1 - lift / 240);
+    ctx.fillStyle = 'rgba(58,35,89,' + (0.22 * k) + ')';
+    ctx.beginPath();
+    ctx.ellipse(30, lift - 3, 46 * (0.55 + k * 0.45), 8 * k + 2, 0, 0, 6.3);
+    ctx.fill();
+
+    ctx.save();
+    // В воздухе дракон задирает нос. Поворачиваем вокруг таза, а не
+    // вокруг ног: иначе он проваливается сквозь землю.
+    ctx.translate(22, -100 + bob);
+    ctx.rotate(-0.17 * fly);
+    ctx.translate(-22, 100);
+
+    // 1. дальнее крыло — за спиной
+    wing(26, -132, fly, Math.sin(t * (fly > 0.5 ? 15 : 5) - 0.5), DR.farLo, DR.webFar);
+
+    // 2. хвост
+    var tx = 8, ty = -102, ang = 3.18;
+    for (var i = 0; i < 4; i++) {
+      ang += 0.13 + Math.sin(p - i * 0.7) * 0.1;
+      var nx = tx + Math.cos(ang) * 13, ny = ty + Math.sin(ang) * 13;
+      ctx.strokeStyle = i < 2 ? DR.body : DR.farLo;
+      ctx.lineWidth = 15 - i * 2.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(nx, ny);
+      ctx.stroke();
+      tx = nx; ty = ny;
+    }
+    ctx.fillStyle = DR.ridge;
+    ctx.beginPath();
+    ctx.moveTo(tx + 6, ty - 1);
+    ctx.lineTo(tx - 14, ty - 11);
+    ctx.lineTo(tx - 10, ty + 9);
+    ctx.closePath();
+    ctx.fill();
+
+    // 3. дальние лапы — темнее, они в тени тела
+    leg(20, -100, -swing, fly, DR.far);
+    arm(44, -118, -swing, fly, DR.far);
+
+    // 4. туловище
+    var g = ctx.createLinearGradient(0, -146, 0, -78);
+    g.addColorStop(0, DR.lit);
+    g.addColorStop(0.5, DR.body);
+    g.addColorStop(1, DR.belly);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(6, -100);
+    ctx.quadraticCurveTo(14, -142, 40, -140);
+    ctx.quadraticCurveTo(56, -137, 58, -116);
+    ctx.quadraticCurveTo(59, -98, 46, -88);
+    ctx.quadraticCurveTo(28, -80, 16, -86);
+    ctx.quadraticCurveTo(6, -90, 6, -100);
+    ctx.fill();
+
+    // складки на брюхе
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 2;
+    for (var b = 0; b < 4; b++) {
+      ctx.beginPath();
+      ctx.moveTo(18 + b * 9, -86 - b * 1.5);
+      ctx.lineTo(22 + b * 9, -96 - b * 2);
+      ctx.stroke();
+    }
+
+    // гребень вдоль спины
+    ctx.fillStyle = DR.ridge;
+    for (var r = 0; r < 5; r++) {
+      var rx = 10 + r * 8, ry = -136 - Math.sin(r / 4 * 3.14) * 6;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry + 4);
+      ctx.lineTo(rx + 4, ry - 9 - (r === 2 ? 3 : 0));
+      ctx.lineTo(rx + 9, ry + 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 5. шея
+    var nx1 = 46, ny1 = -130, na = -1.62;
+    var seg = [[26, -1.62], [24, -1.32], [16, -0.92]];
+    for (var n = 0; n < seg.length; n++) {
+      na = seg[n][1] + Math.sin(p - n) * 0.05 * (run ? 1 : 0.4) - 0.1 * fly;
+      var e = bone(nx1, ny1, na, seg[n][0], 20 - n * 3, DR.body);
+      nx1 = e[0]; ny1 = e[1];
+    }
+
+    // 6. голова
+    head(nx1 + 4, ny1 - 4, na + 1.25, 1);
+
+    // 7. ближние лапы — светлее дальних, поэтому читается объём
+    leg(24, -100, swing, fly, DR.body);
+    arm(48, -118, swing, fly, DR.lit);
+
+    // 8. ближнее крыло — поверх всего
+    wing(34, -136, fly, flap, DR.body, DR.web);
+
+    ctx.restore();
+  }
+
+
+  /* --- дракон 2: четвероногий, волчьего склада --------------------------
+     Тот же приём с костями, но склад другой: длинное горизонтальное тело,
+     четыре лапы вместо двух, волчий хвост и маленькие крылья, которые
+     раскрываются только в прыжке. Бег — галоп: задняя пара толкает,
+     передняя принимает, поэтому фазы у них разведены почти на полкруга.  */
+
+  var WD = {
+    far:   '#191114',        // дальняя пара лап — почти чёрная
+    body:  '#241a1f',
+    lit:   '#3b2830',
+    belly: '#523138',
+    red:   '#c0392b',
+    hot:   '#ff6b3d',
+    web:   'rgba(192,57,43,.82)',
+    webFar:'rgba(112,30,25,.82)',
+    claw:  '#e8dcd8',
+    eye:   '#ff7a2f'
+  };
+
+  function claws(at, dir) {
+    ctx.strokeStyle = WD.claw;
+    ctx.lineWidth = 2.4;
+    for (var i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(at[0], at[1]);
+      ctx.lineTo(at[0] + dir * (5 + i), at[1] + 4 + i * 1.6);
+      ctx.stroke();
+    }
+  }
+
+  // Задняя лапа: бедро -> голень -> плюсна. В прыжке вытягивается назад.
+  function wleg(hx, hy, sw, tuck, col) {
+    var a1 = lerp(1.50 + sw * 0.45, 2.75, tuck);
+    var a2 = lerp(2.00 - sw * 0.70, 2.95, tuck);
+    var a3 = lerp(0.60 + sw * 0.45, 2.90, tuck);
+    var k = bone(hx, hy, a1, 34, 13, col);
+    var h = bone(k[0], k[1], a2, 32, 10, col);
+    var f = bone(h[0], h[1], a3, 22, 8, col);
+    claws(f, tuck > 0.5 ? -1 : 1);
+  }
+
+  // Передняя лапа: в прыжке поджимается под грудь.
+  function warm(sx, sy, sw, tuck, col) {
+    var a1 = lerp(1.35 - sw * 0.50, 2.30, tuck);
+    var a2 = lerp(1.75 + sw * 0.55, -1.00, tuck);
+    var a3 = lerp(1.50 + sw * 0.30, 0.55, tuck);
+    var e = bone(sx, sy, a1, 34, 11, col);
+    var w = bone(e[0], e[1], a2, 33, 9, col);
+    var f = bone(w[0], w[1], a3, 18, 7, col);
+    claws(f, 1);
+  }
+
+  function wolfdragon(t, run, fly, lift) {
+    var p = run ? t * 8.5 : t * 2;
+    var hind = Math.sin(p);
+    var fore = Math.sin(p + 2.4);
+    var flap = Math.sin(t * (fly > 0.5 ? 17 : 4));
+    var bob = run ? Math.sin(p * 2) * 2.5 : Math.sin(t * 2) * 1.2;
+
+    var k = Math.max(0, 1 - lift / 240);
+    ctx.fillStyle = 'rgba(25,17,20,' + (0.24 * k) + ')';
+    ctx.beginPath();
+    ctx.ellipse(52, lift - 3, 56 * (0.55 + k * 0.45), 8 * k + 2, 0, 0, 6.3);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(50, -84 + bob);
+    // В прыжке корпус вытягивается по дуге — как у волка в полёте.
+    ctx.rotate(-0.2 * fly + (run ? Math.sin(p) * 0.04 : 0));
+    ctx.translate(-50, 84);
+
+    // 1. дальнее крыло
+    wing(40, -102, fly, Math.sin(t * (fly > 0.5 ? 17 : 4) - 0.5),
+         WD.far, WD.webFar, 0.62);
+
+    // 2. хвост — длиннее волчьего, с волной по всей длине
+    var tx = 12, ty = -86, ang = 3.24;
+    for (var i = 0; i < 6; i++) {
+      ang += 0.05 + Math.sin(p - i * 0.55) * 0.09 - fly * 0.03;
+      var nx = tx + Math.cos(ang) * 11, ny = ty + Math.sin(ang) * 11;
+      ctx.strokeStyle = i < 3 ? WD.body : WD.far;
+      ctx.lineWidth = 13 - i * 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(nx, ny);
+      ctx.stroke();
+      tx = nx; ty = ny;
+    }
+    ctx.strokeStyle = WD.red;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(tx + 4, ty);
+    ctx.lineTo(tx - 9, ty - 5);
+    ctx.stroke();
+
+    // 3. дальняя пара лап
+    wleg(20, -84, -hind, fly, WD.far);
+    warm(70, -92, -fore, fly, WD.far);
+
+    // 4. корпус
+    var g = ctx.createLinearGradient(0, -108, 0, -62);
+    g.addColorStop(0, WD.lit);
+    g.addColorStop(0.55, WD.body);
+    g.addColorStop(1, WD.belly);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(10, -86);
+    ctx.quadraticCurveTo(30, -106, 58, -103);
+    ctx.quadraticCurveTo(80, -101, 88, -87);
+    ctx.quadraticCurveTo(91, -73, 76, -68);
+    ctx.quadraticCurveTo(46, -61, 20, -70);
+    ctx.quadraticCurveTo(9, -75, 10, -86);
+    ctx.fill();
+
+    // красный гребень вдоль хребта
+    ctx.fillStyle = WD.red;
+    for (var r = 0; r < 6; r++) {
+      var rx = 16 + r * 11, ry = -100 - Math.sin(r / 5 * 3.14) * 4;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry + 3);
+      ctx.lineTo(rx + 3, ry - 7);
+      ctx.lineTo(rx + 7, ry + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // рёбра тлеющим по боку — чёрное тело иначе читается силуэтом без объёма
+    ctx.strokeStyle = 'rgba(255,107,61,.35)';
+    ctx.lineWidth = 2;
+    for (var b = 0; b < 3; b++) {
+      ctx.beginPath();
+      ctx.moveTo(30 + b * 12, -72);
+      ctx.lineTo(34 + b * 12, -88);
+      ctx.stroke();
+    }
+
+    // 5. шея и голова
+    var e1 = bone(72, -96, -0.85, 22, 17, WD.body);
+    var e2 = bone(e1[0], e1[1], -0.5 - 0.15 * fly, 16, 14, WD.body);
+    whead(e2[0] + 2, e2[1] - 1, 0.3 - 0.2 * fly);
+
+    // 6. ближняя пара лап
+    wleg(26, -84, hind, fly, WD.body);
+    warm(76, -92, fore, fly, WD.lit);
+
+    // 7. ближнее крыло поверх спины
+    wing(48, -104, fly, flap, WD.body, WD.web, 0.62);
+
+    ctx.restore();
+  }
+
+  function whead(x, y, ang) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+
+    // уши торчком, как у волка
+    ctx.fillStyle = WD.far;
+    [[-6, -10], [-13, -8]].forEach(function (o) {
+      ctx.beginPath();
+      ctx.moveTo(o[0], o[1]);
+      ctx.lineTo(o[0] - 3, o[1] - 16);
+      ctx.lineTo(o[0] + 7, o[1] - 5);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    ctx.fillStyle = WD.body;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 16, 12, 0, 0, 6.3);
+    ctx.fill();
+
+    // морда длиннее и уже драконьей — волчья
+    ctx.beginPath();
+    ctx.moveTo(4, -9);
+    ctx.quadraticCurveTo(24, -9, 33, -2);
+    ctx.quadraticCurveTo(26, 4, 18, 5);
+    ctx.lineTo(4, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = WD.belly;
+    ctx.beginPath();
+    ctx.moveTo(3, 5);
+    ctx.quadraticCurveTo(16, 7, 25, 2);
+    ctx.quadraticCurveTo(15, 12, 2, 11);
+    ctx.closePath();
+    ctx.fill();
+
+    // рожки назад
+    ctx.strokeStyle = WD.red;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-2, -8);
+    ctx.quadraticCurveTo(-16, -14, -24, -8);
+    ctx.stroke();
+
+    // глаз — единственное яркое пятно на чёрной морде
+    var gg = ctx.createRadialGradient(7, -3, 1, 7, -3, 11);
+    gg.addColorStop(0, 'rgba(255,150,80,.9)');
+    gg.addColorStop(1, 'rgba(255,107,61,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(7, -3, 11, 0, 6.3);
+    ctx.fill();
+    ctx.fillStyle = WD.eye;
+    ctx.beginPath();
+    ctx.ellipse(7, -3, 5, 4, 0, 0, 6.3);
+    ctx.fill();
+    ctx.fillStyle = '#1b0f12';
+    ctx.beginPath();
+    ctx.ellipse(8, -3, 1.6, 3.4, 0, 0, 6.3);
+    ctx.fill();
+
+    ctx.fillStyle = '#1b0f12';
+    ctx.beginPath();
+    ctx.ellipse(27, -3, 2, 1.5, 0, 0, 6.3);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /* --- список существ ---------------------------------------------------
+     Каждая версия остаётся здесь навсегда: выбранная запоминается, к
+     прошлой всегда можно вернуться. view — рамка, по которой считается
+     превью на кнопке. */
+  var BEASTS = [
+    { id: 'dragon1', name: 'Дракон 1 · двуногий', w: 62, h: 190,
+      view: [-52, -236, 100, 4], draw: dragon },
+    { id: 'dragon2', name: 'Дракон 2 · волк', w: 100, h: 140,
+      view: [-60, -158, 140, 6], draw: wolfdragon }
+  ];
+
+  var beastId = 'dragon1';
+  try { beastId = localStorage.getItem('run-beast') || 'dragon1'; } catch (e) { /**/ }
+
+  function beast() {
+    for (var i = 0; i < BEASTS.length; i++) {
+      if (BEASTS[i].id === beastId) { return BEASTS[i]; }
+    }
+    return BEASTS[0];
+  }
+
+  /* Рисунок из слота. Он неподвижный, поэтому оживляем его движением:
+     подскок, наклон вперёд и лёгкое сжатие в момент касания земли. */
+  function sprite(img, w, h, t, run) {
+    var k = w / img.width;
+    var hh = img.height * k;
+    if (hh > h) { k = h / img.height; hh = h; }
+    var ww = img.width * k;
+    var bob = run ? Math.sin(t * 12) * 3 : 0;
+    var tilt = run ? Math.sin(t * 12) * 0.06 : 0;
+    var squash = run ? 1 + Math.sin(t * 24) * 0.03 : 1;
+    ctx.rotate(tilt);
+    ctx.drawImage(img, -ww / 2, -hh * squash + bob, ww, hh * squash);
+  }
+
+  function drawHero() {
+    ctx.save();
+    ctx.translate(66, ground + hero.y);
+    var running = state === 'run' && hero.onGround;
+    if (slots.hero) {
+      ctx.translate(HERO_W / 2, 0);
+      sprite(slots.hero, HERO_W + 24, HERO_H + 8, hero.t, running);
+    } else {
+      beast().draw(hero.t, running, hero.fly, -hero.y);
+    }
+    ctx.restore();
+  }
+
+  function drawThing(o) {
+    ctx.save();
+    if (o.kind === 'bird') {
+      ctx.translate(o.x + o.w / 2, o.y + o.h / 2 + Math.sin(o.t * 6) * 5);
+      if (slots.bird) {
+        ctx.translate(0, o.h / 2);
+        sprite(slots.bird, o.w + 10, o.h + 12, o.t, true);
+      } else {
+        var flap = Math.sin(o.t * 14) * 9;
+        ctx.fillStyle = '#6b5b8f';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 15, 8, 0, 0, 6.3);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-2, -2);
+        ctx.lineTo(-18, -6 - flap);
+        ctx.lineTo(-2, 5);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(2, -2);
+        ctx.lineTo(16, -8 + flap);
+        ctx.lineTo(4, 4);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(9, -2, 2, 0, 6.3);
+        ctx.fill();
+      }
+    } else {
+      ctx.translate(o.x + o.w / 2, o.y);
+      if (slots.rock) {
+        sprite(slots.rock, o.w + 14, o.h + 10, 0, false);
+      } else {
+        ctx.fillStyle = mix([90, 122, 88], [46, 62, 54], night);
+        ctx.beginPath();
+        ctx.moveTo(-o.w / 2, 0);
+        ctx.quadraticCurveTo(-o.w / 3, -o.h, 0, -o.h);
+        ctx.quadraticCurveTo(o.w / 3, -o.h, o.w / 2, 0);
+        ctx.fill();
+        ctx.fillStyle = mix([120, 156, 116], [60, 78, 68], night);
+        ctx.beginPath();
+        ctx.ellipse(0, -o.h, o.w / 2, 7, 0, 0, 6.3);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!last) { last = now; }
+    // Вкладка была свёрнута — не прокручиваем мир на весь простой.
+    var dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    step(dt);
+
+    ctx.clearRect(0, 0, W, H);
+    sky();
+    land();
+
+    ctx.globalAlpha = .5;
+    ctx.fillStyle = '#fff';
+    puffs.forEach(function (p) {
+      ctx.globalAlpha = Math.max(0, p.a);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, 6.3);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    things.forEach(drawThing);
+    drawHero();
+  }
+
+  /* --- мастерская: рисунок превращается в спрайт ------------------------
+     Всё считается прямо в браузере, ничего никуда не уходит.
+
+     Наивный порог по яркости здесь не работает: фото с телефона почти
+     всегда неровное — один край листа светлее другого, и любая
+     постоянная граница либо съедает рисунок, либо оставляет полкадра.
+
+     Поэтому по порядку:
+       1. уменьшить
+       2. поделить каждый пиксель на яркость бумаги ВОКРУГ него —
+          после этого бумага везде равна единице
+       3. тёмное = линии рисунка
+       4. выбросить пятна, упирающиеся в край кадра:
+          пружины блокнота, тень, край стола
+       5. замкнуть силуэт: линии толстеют, потом худеют обратно —
+          рисунок от руки всегда с разрывами, и без этого заливка
+          вытекает наружу
+       6. снаружи прозрачно, внутри — ровная белая заливка
+  */
+
+  function normalize(lum, w, h) {
+    // Таблица сумм: среднее по любому прямоугольнику берётся за четыре
+    // обращения, каким бы большим он ни был.
+    var acc = new Float64Array((w + 1) * (h + 1));
+    for (var y = 0; y < h; y++) {
+      var line = 0;
+      for (var x = 0; x < w; x++) {
+        line += lum[y * w + x];
+        acc[(y + 1) * (w + 1) + x + 1] = acc[y * (w + 1) + x + 1] + line;
+      }
+    }
+    var r = Math.max(8, Math.round(Math.max(w, h) / 8));
+    var out = new Float32Array(w * h);
+    for (var yy = 0; yy < h; yy++) {
+      var y0 = Math.max(0, yy - r), y1 = Math.min(h, yy + r + 1);
+      for (var xx = 0; xx < w; xx++) {
+        var x0 = Math.max(0, xx - r), x1 = Math.min(w, xx + r + 1);
+        var sum = acc[y1 * (w + 1) + x1] - acc[y0 * (w + 1) + x1]
+                - acc[y1 * (w + 1) + x0] + acc[y0 * (w + 1) + x0];
+        var bg = sum / ((y1 - y0) * (x1 - x0));
+        out[yy * w + xx] = bg > 0.02 ? lum[yy * w + xx] / bg : 1;
+      }
+    }
+    return out;
+  }
+
+  // Квадратное ядро раскладывается на два прохода — сначала по строкам,
+  // потом по столбцам. Это тот же результат, но во много раз быстрее.
+  function spread(src, w, h, r, grow) {
+    var a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+    var hit = grow ? 1 : 0;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var v = grow ? 0 : 1;
+        for (var d = -r; d <= r; d++) {
+          var xx = x + d;
+          if (xx < 0 || xx >= w) { continue; }
+          if (src[y * w + xx] === hit) { v = hit; break; }
+        }
+        a[y * w + x] = v;
+      }
+    }
+    for (var x2 = 0; x2 < w; x2++) {
+      for (var y2 = 0; y2 < h; y2++) {
+        var v2 = grow ? 0 : 1;
+        for (var d2 = -r; d2 <= r; d2++) {
+          var yy = y2 + d2;
+          if (yy < 0 || yy >= h) { continue; }
+          if (a[yy * w + x2] === hit) { v2 = hit; break; }
+        }
+        b[y2 * w + x2] = v2;
+      }
+    }
+    return b;
+  }
+
+  function cutout(img, done) {
+    var MAXP = 240;
+    var k = Math.min(MAXP / img.width, MAXP / img.height, 1);
+    var w = Math.max(1, Math.round(img.width * k));
+    var h = Math.max(1, Math.round(img.height * k));
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var g = c.getContext('2d');
+    g.drawImage(img, 0, 0, w, h);
+    var px = g.getImageData(0, 0, w, h).data;
+
+    var n = w * h;
+    var lum = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      // Зелёный глазу заметнее синего — отсюда неравные доли.
+      lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587
+              + px[i * 4 + 2] * 0.114) / 255;
+    }
+    var nrm = normalize(lum, w, h);
+
+    var DARK = 0.80, LIGHT = 0.90;
+    var mask = new Uint8Array(n);
+    for (var m = 0; m < n; m++) { mask[m] = nrm[m] < DARK ? 1 : 0; }
+
+    // Пятна, доходящие до края кадра, — не рисунок. Их стираем совсем,
+    // иначе тень проступит в спрайте серой полосой.
+    var seen = new Uint8Array(n);
+    var stack = new Int32Array(n);
+    var cells = new Int32Array(n);
+    var x0 = w, y0 = h, x1 = -1, y1 = -1, found = false;
+
+    for (var s0 = 0; s0 < n; s0++) {
+      if (seen[s0] || !mask[s0]) { continue; }
+      var top = 0, cnt = 0, edge = false;
+      stack[top++] = s0; seen[s0] = 1;
+      while (top) {
+        var p = stack[--top];
+        cells[cnt++] = p;
+        var x = p % w, y = (p / w) | 0;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { edge = true; }
+        if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack[top++] = p - 1; }
+        if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack[top++] = p + 1; }
+        if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; stack[top++] = p - w; }
+        if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; stack[top++] = p + w; }
+      }
+      if (edge) {
+        for (var e = 0; e < cnt; e++) { mask[cells[e]] = 0; nrm[cells[e]] = 1; }
+        continue;
+      }
+      // Рамку считаем только по заметным пятнам: пылинка в углу листа
+      // не должна растягивать спрайт на весь лист.
+      if (cnt < 3) { continue; }
+      found = true;
+      for (var b = 0; b < cnt; b++) {
+        var bx = cells[b] % w, by = (cells[b] / w) | 0;
+        if (bx < x0) { x0 = bx; }
+        if (by < y0) { y0 = by; }
+        if (bx > x1) { x1 = bx; }
+        if (by > y1) { y1 = by; }
+      }
+    }
+    if (!found) { return done(null); }
+
+    var pad = 3;
+    x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+    x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
+    var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+
+    var solid = spread(spread(mask, w, h, 8, true), w, h, 8, false);
+
+    // Снаружи — всё, до чего удалось дойти от края, не пересекая линий.
+    var outside = new Uint8Array(cw * ch);
+    var q = new Int32Array(cw * ch);
+    var qn = 0;
+
+    function push(x, y) {
+      if (x < 0 || y < 0 || x >= cw || y >= ch) { return; }
+      var j = y * cw + x;
+      if (outside[j] || solid[(y + y0) * w + (x + x0)]) { return; }
+      outside[j] = 1;
+      q[qn++] = j;
+    }
+    for (var fx = 0; fx < cw; fx++) { push(fx, 0); push(fx, ch - 1); }
+    for (var fy = 0; fy < ch; fy++) { push(0, fy); push(cw - 1, fy); }
+    for (var qi = 0; qi < qn; qi++) {
+      var pp = q[qi], px2 = pp % cw, py2 = (pp / cw) | 0;
+      push(px2 - 1, py2); push(px2 + 1, py2); push(px2, py2 - 1); push(px2, py2 + 1);
+    }
+
+    var out = document.createElement('canvas');
+    out.width = cw; out.height = ch;
+    var og = out.getContext('2d');
+    var dst = og.createImageData(cw, ch);
+    for (var oy = 0; oy < ch; oy++) {
+      for (var ox = 0; ox < cw; ox++) {
+        var j2 = oy * cw + ox;
+        var v = nrm[(oy + y0) * w + (ox + x0)];
+        // Внутри персонажа бумага становится ровной белой заливкой:
+        // серость и клетка тетради в игре ни к чему.
+        var ink = Math.max(0, Math.min(1, (LIGHT - v) / (LIGHT - DARK)));
+        var tone = Math.round(255 - ink * 215);
+        dst.data[j2 * 4] = dst.data[j2 * 4 + 1] = dst.data[j2 * 4 + 2] = tone;
+        // Снаружи прозрачно, но линия на самой границе гаснет плавно —
+        // иначе край получается пилой.
+        dst.data[j2 * 4 + 3] = outside[j2] ? Math.round(Math.min(1, ink * 1.6) * 255) : 255;
+      }
+    }
+    og.putImageData(dst, 0, 0);
+    done(out.toDataURL('image/png'));
+  }
+
+  var pick = document.getElementById('pick');
+  var picking = null;
+
+  var cleared = false;   // слот только что сбросили долгим нажатием
+
+  document.getElementById('studio').addEventListener('click', function (e) {
+    var b = e.target.closest('.slot');
+    if (!b) { return; }
+    // После сброса браузер всё равно досылает click — иначе следом
+    // открывался бы выбор файла, которого никто не просил.
+    if (cleared) { cleared = false; return; }
+    picking = b.dataset.slot;
+    pick.value = '';
+    pick.click();
+  });
+
+  pick.addEventListener('change', function () {
+    var file = pick.files && pick.files[0];
+    if (!file || !picking) { return; }
+    var fr = new FileReader();
+    fr.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        cutout(img, function (url) {
+          if (!url) { return; }
+          var s = new Image();
+          s.onload = function () {
+            slots[picking] = s;
+            try { localStorage.setItem('run-sprite-' + picking, url); }
+            catch (err) { /* места нет — персонаж живёт до перезагрузки */ }
+            drawChips();
+          };
+          s.src = url;
+        });
+      };
+      img.onerror = function () { /* не картинка — молча выходим */ };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+
+  // Долгое нажатие по слоту возвращает нарисованного кодом персонажа.
+  [].forEach.call(document.querySelectorAll('.slot'), function (b) {
+    var t = null;
+    b.addEventListener('pointerdown', function () {
+      t = setTimeout(function () {
+        t = null;
+        var k = b.dataset.slot;
+        var was = null;
+        try { was = localStorage.getItem('run-sprite-' + k); } catch (e) { /**/ }
+        slots[k] = null;
+        try {
+          // Долгое нажатие переключает: рисунок -> нарисованный кодом
+          // -> обратно к рисунку по умолчанию.
+          if (was === 'none') { localStorage.removeItem('run-sprite-' + k); }
+          else { localStorage.setItem('run-sprite-' + k, 'none'); }
+        } catch (e) { /**/ }
+        if (was === 'none') { loadSlots(); }
+        drawChips();
+        picking = null;
+        cleared = true;
+      }, 650);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+      b.addEventListener(ev, function () { if (t) { clearTimeout(t); t = null; } });
+    });
+  });
+
+
+  /* --- выбор существа ---------------------------------------------------
+     Превью рисуются тем же кодом, что и сама игра, поэтому картинка на
+     кнопке не может разойтись с тем, кого увидишь на поле. */
+  function paintBeast(c, b) {
+    var d = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = 46, ch = 34;
+    c.width = Math.round(cw * d);
+    c.height = Math.round(ch * d);
+    var g = c.getContext('2d');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.clearRect(0, 0, cw, ch);
+
+    var vw = b.view[2] - b.view[0], vh = b.view[3] - b.view[1];
+    var k = Math.min(cw / vw, ch / vh) * 0.94;
+    // Функции рисования пишут в общий ctx — на время подменяем его.
+    var save = ctx;
+    ctx = g;
+    g.save();
+    g.translate(cw / 2 - (b.view[0] + b.view[2]) / 2 * k,
+                ch / 2 - (b.view[1] + b.view[3]) / 2 * k);
+    g.scale(k, k);
+    b.draw(0.35, false, 0, 0);
+    g.restore();
+    ctx = save;
+  }
+
+  var beastBtn = document.getElementById('beastBtn');
+  var beastList = document.getElementById('beastList');
+
+  function paintPicker() {
+    paintBeast(beastBtn.querySelector('canvas'), beast());
+    beastBtn.querySelector('b').textContent = beast().name;
+    beastList.innerHTML = '';
+    BEASTS.forEach(function (b) {
+      var row = document.createElement('button');
+      if (b.id === beastId) { row.className = 'on'; }
+      var c = document.createElement('canvas');
+      var lab = document.createElement('span');
+      lab.textContent = b.name;
+      row.appendChild(c);
+      row.appendChild(lab);
+      row.onclick = function (e) {
+        e.stopPropagation();
+        beastId = b.id;
+        try { localStorage.setItem('run-beast', b.id); } catch (er) { /**/ }
+        beastList.hidden = true;
+        paintPicker();
+      };
+      beastList.appendChild(row);
+      paintBeast(c, b);      // размеры холста известны только после вставки
+    });
+  }
+
+  beastBtn.onclick = function (e) {
+    e.stopPropagation();
+    beastList.hidden = !beastList.hidden;
+  };
+  document.addEventListener('pointerdown', function (e) {
+    if (!beastList.hidden && !document.getElementById('beasts').contains(e.target)) {
+      beastList.hidden = true;
+    }
+  });
+
+  // Кружочки-превью на кнопках: видно, кто сейчас в каком слоте.
+  function drawChips() {
+    [].forEach.call(document.querySelectorAll('.slot'), function (b) {
+      var c = b.querySelector('canvas');
+      var d = Math.min(window.devicePixelRatio || 1, 2);
+      c.width = 64 * d; c.height = 40 * d;
+      var g = c.getContext('2d');
+      g.setTransform(d, 0, 0, d, 0, 0);
+      g.clearRect(0, 0, 64, 40);
+      var img = slots[b.dataset.slot];
+      if (img) {
+        var k = Math.min(60 / img.width, 38 / img.height);
+        g.drawImage(img, (64 - img.width * k) / 2, (40 - img.height * k) / 2,
+                    img.width * k, img.height * k);
+      } else {
+        var off = false;
+        try { off = localStorage.getItem('run-sprite-' + b.dataset.slot) === 'none'; }
+        catch (e) { off = false; }
+        g.fillStyle = off ? '#7d55c6' : '#9fbdb0';
+        g.font = '11px sans-serif';
+        g.textAlign = 'center';
+        g.fillText(off || CODE ? 'код' : 'свой', 32, 24);
+      }
+    });
+  }
+
+  fit();
+  reset();
+  loadSlots();
+  drawChips();
+  paintPicker();
+  document.getElementById('best').textContent = 'рекорд ' + best;
+  requestAnimationFrame(frame);
+}());
+</script>
+</body>
+</html>
