@@ -204,6 +204,21 @@ input[type=file] { display: none; }
   var HERO_H = 190;        // рост героя
   var HERO_W = 62;         // ширина, по которой считаются столкновения
 
+  // Потолок полёта. Выше — уже за краем экрана, и препятствия там не
+  // видно: пусть крылатый упирается в невидимую границу, а не улетает.
+  // 330 — это в удобном вертикальном окне; в низком (телефон боком)
+  // столько просто нет, поэтому берём то, что меньше.
+  var НЕБО = -330;
+
+  function потолок() {
+    var рост = beast().h;
+    return Math.max(НЕБО, рост + 10 - ground);
+  }
+  // Насколько сплющивается ползущий: и рисунок, и рамка столкновений.
+  var ПОЛЗКОМ = 0.42;
+  // Двойное нажатие считается двойным, если уложились в это время.
+  var ДВОЙНОЕ = 280;
+
   try { best = parseInt(localStorage.getItem('run-best') || '0', 10) || 0; }
   catch (e) { best = 0; }
 
@@ -214,7 +229,16 @@ input[type=file] { display: none; }
     // fly — насколько герой «в воздухе» с точки зрения анимации: не
     // прыгнул/не прыгнул, а плавная величина 0..1. По ней раскрываются
     // крылья и поджимаются лапы, иначе переход выглядит как рывок.
-    hero = { x: 0, y: 0, vy: 0, onGround: true, hold: false, t: 0, fly: 0 };
+    hero = {
+      x: 0, y: 0, vy: 0, onGround: true, hold: false, t: 0, fly: 0,
+      // Полёт крылатых: держит палец — летит на выбранной высоте и
+      // рулит ею, двигая палец вверх и вниз. Отпустил — падает.
+      // Без этого игра ломается: можно было бы просто висеть над всем.
+      парит: false, цель: 0, палец: 0,
+      // Ползком — для бескрылого: пока палец на экране, он прижат
+      // к земле. Плавная величина 0..1, чтобы не дёргался.
+      ползёт: false, низко: 0
+    };
   }
 
   /* --- спрайты ---------------------------------------------------------
@@ -258,6 +282,7 @@ input[type=file] { display: none; }
     hero.vy = JUMP;
     hero.onGround = false;
     hero.hold = true;
+    hero.ползёт = false;
     for (var i = 0; i < 9; i++) { puff(64, ground); }
   }
 
@@ -268,16 +293,87 @@ input[type=file] { display: none; }
     if (hero && hero.vy < -360) { hero.vy = -360; }
   }
 
-  cv.addEventListener('pointerdown', function (e) { e.preventDefault(); jump(); });
-  cv.addEventListener('pointerup', release);
-  cv.addEventListener('pointercancel', release);
+  /* Управление у крылатых и бескрылого разное — так просил Михаил.
+
+     крылатый:  тап — прыжок
+                тап в воздухе — полёт, и пока палец на экране,
+                высота идёт за пальцем
+     бескрылый: палец на экране — ползёт по земле
+                двойной тап — прыжок
+
+     Общее правило: разбор нажатия живёт здесь, а физика — в step().
+     Смешивать их — верный способ получить героя, который прыгает
+     дважды за одно касание. */
+  var прошлыйТап = 0;
+
+  function крылатый() {
+    return !slots.hero && beast().крылья !== false;
+  }
+
+  function вниз(y) {
+    if (state !== 'run') { jump(); return; }   // из меню и с экрана «конец»
+
+    var теперь = Date.now();
+    var двойной = теперь - прошлыйТап < ДВОЙНОЕ;
+    прошлыйТап = теперь;
+    // С клавиатуры координаты пальца нет — высоту там правят стрелками.
+    hero.палец = (y === null ? hero.палец : y);
+
+    if (крылатый()) {
+      if (hero.onGround) { jump(); return; }
+      // Второй тап в воздухе — переходим в полёт с текущей высоты.
+      hero.парит = true;
+      hero.цель = hero.y;
+      hero.vy = 0;
+      return;
+    }
+
+    // Бескрылый.
+    if (двойной) { hero.ползёт = false; jump(); return; }
+    if (hero.onGround) { hero.ползёт = true; }
+  }
+
+  function вверх() {
+    release();
+    // Палец ушёл — полёт кончился, дальше падение. Ползти тоже
+    // перестаём: прижатым он остаётся ровно пока держишь.
+    hero.парит = false;
+    hero.ползёт = false;
+  }
+
+  function ведёт(y) {
+    if (!hero || !hero.парит) { return; }
+    // Сдвиг пальца переносится в высоту один к одному: так понятнее,
+    // чем скорость набора — палец где, там и дракон.
+    hero.цель += y - hero.палец;
+    hero.палец = y;
+    var верх = потолок();
+    if (hero.цель < верх) { hero.цель = верх; }
+    if (hero.цель > 0) { hero.цель = 0; }
+  }
+
+  cv.addEventListener('pointerdown', function (e) { e.preventDefault(); вниз(e.clientY); });
+  cv.addEventListener('pointermove', function (e) { ведёт(e.clientY); });
+  cv.addEventListener('pointerup', вверх);
+  cv.addEventListener('pointercancel', вверх);
+
+  // Клавиатура — для проверки с ноутбука. Пробел работает как палец,
+  // стрелки заменяют его движение вверх-вниз в полёте.
+  var ТАП = { Space: 1, KeyW: 1 };
+  var ШАГ = 26;                       // на сколько пикселей двигает стрелка
   window.addEventListener('keydown', function (e) {
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-      e.preventDefault(); jump();
+    var парит = hero && hero.парит;
+    if (e.code === 'ArrowDown' && парит) { e.preventDefault(); ведёт(hero.палец + ШАГ); return; }
+    if (e.code === 'ArrowUp' && парит) { e.preventDefault(); ведёт(hero.палец - ШАГ); return; }
+    if (ТАП[e.code] || e.code === 'ArrowUp') {
+      e.preventDefault();
+      // Зажатую клавишу браузер повторяет — без этой проверки одно
+      // нажатие насчитало бы десяток «двойных тапов».
+      if (!e.repeat) { вниз(null); }
     }
   });
   window.addEventListener('keyup', function (e) {
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { release(); }
+    if (ТАП[e.code] || e.code === 'ArrowUp') { вверх(); }
   });
 
   function start() {
@@ -307,7 +403,33 @@ input[type=file] { display: none; }
     // Летун появляется только когда уже разогнались: на медленной
     // скорости он получается несправедливым.
     var flying = speed > 330 && Math.random() < 0.3;
-    if (flying) {
+    // Навес — низкая перекладина сверху: пройти можно только прижавшись
+    // к земле. Появляется тоже не сразу, чтобы первые секунды игры
+    // оставались простыми.
+    var навес = !flying && speed > 300 && Math.random() < 0.28;
+    // Заслон в небе — там, где летают. Без него полёт делал бы игру
+    // бессмысленной: поднялся повыше и лети над всем.
+    var заслон = flying && Math.random() < 0.45;
+
+    if (навес) {
+      // Просвет считаем от роста существа в положении лёжа, а не числом
+      // из головы: у волка и у двуногого разная высота, и фиксированная
+      // щель для одного была бы непроходимой.
+      var щель = Math.round(beast().h * ПОЛЗКОМ) + 20;
+      things.push({
+        kind: 'arch', x: W + 40, y: ground - щель,
+        w: 58, h: 150, t: 0
+      });
+    } else if (заслон) {
+      // Ставим на высоте, куда как раз забирается крылатый. Верхнюю
+      // границу держим ниже потолка: иначе получится заслон, который
+      // нечем облететь.
+      var верх = 170 + Math.random() * 90;
+      things.push({
+        kind: 'bird', x: W + 40, y: ground - верх,
+        w: 56, h: 44, t: Math.random() * 6
+      });
+    } else if (flying) {
       things.push({
         kind: 'bird', x: W + 40, y: ground - 96 - Math.random() * 38,
         w: 56, h: 44, t: Math.random() * 6
@@ -351,9 +473,27 @@ input[type=file] { display: none; }
     hero.t += dt * (speed / 250);
     // Крылья раскрываются не мгновенно: тянемся к цели, а не прыгаем в неё.
     hero.fly += ((hero.onGround ? 0 : 1) - hero.fly) * Math.min(1, dt * 7);
-    hero.vy += G * dt * (hero.hold && hero.vy < 0 ? 0.62 : 1);
-    hero.y += hero.vy * dt;
-    if (hero.y >= 0) { hero.y = 0; hero.vy = 0; hero.onGround = true; hero.hold = false; }
+    // Прижатость к земле тоже тянем плавно, иначе на каждом касании
+    // дракон схлопывается рывком.
+    hero.низко += ((hero.ползёт && hero.onGround ? 1 : 0) - hero.низко)
+                  * Math.min(1, dt * 12);
+
+    if (hero.парит) {
+      // В полёте тяжести нет: высота идёт за пальцем, но не мгновенно —
+      // иначе дракон телепортируется и столкновения выглядят нечестно.
+      var верхНеба = потолок();
+      if (hero.цель < верхНеба) { hero.цель = верхНеба; }   // окно могли уменьшить
+      hero.y += (hero.цель - hero.y) * Math.min(1, dt * 9);
+      hero.vy = 0;
+      hero.onGround = false;
+    } else {
+      hero.vy += G * dt * (hero.hold && hero.vy < 0 ? 0.62 : 1);
+      hero.y += hero.vy * dt;
+    }
+    if (hero.y >= 0) {
+      hero.y = 0; hero.vy = 0; hero.onGround = true;
+      hero.hold = false; hero.парит = false;
+    }
 
     spawnIn -= dt * 1000;
     if (spawnIn <= 0) { spawn(); }
@@ -361,12 +501,23 @@ input[type=file] { display: none; }
     // У каждого существа своя стать, поэтому рамка берётся от него.
     var bw = slots.hero ? HERO_W : beast().w;
     var bh = slots.hero ? HERO_H : beast().h;
+    // Прижатый занимает меньше по высоте — в этом весь смысл ползти
+    // под навесом. Рамка обязана сжиматься вместе с рисунком, иначе
+    // игра убивает за то, чего на экране не видно.
+    bh *= 1 - hero.низко * (1 - ПОЛЗКОМ);
+    // Растянулся вширь — рамка тоже. Иначе рисунок и расчёт разъезжаются
+    // ровно в тот момент, когда игрок жмётся к препятствию.
+    bw *= 1 + hero.низко * 0.3;
     var box = { x: 66, y: ground - bh + hero.y, w: bw, h: bh };
     for (var i = things.length - 1; i >= 0; i--) {
       var o = things[i];
       o.x -= speed * dt;
       o.t += dt;
-      var ob = { x: o.x, y: o.kind === 'bird' ? o.y : o.y - o.h, w: o.w, h: o.h };
+      // У летуна в y хранится верх, у камня и навеса — низ: камень
+      // стоит на земле, навес свисает, и обоим удобнее считаться от
+      // нижнего края.
+      var верх = o.kind === 'bird' ? o.y : o.y - o.h;
+      var ob = { x: o.x, y: верх, w: o.w, h: o.h };
       if (hits(box, ob)) { return over(); }
       if (o.x < -80) { things.splice(i, 1); }
     }
@@ -974,10 +1125,12 @@ input[type=file] { display: none; }
      прошлой всегда можно вернуться. view — рамка, по которой считается
      превью на кнопке. */
   var BEASTS = [
+    // крылья решают управление: с крыльями второе нажатие переходит в
+    // ровный полёт, без крыльев одиночное нажатие прижимает к земле.
     { id: 'dragon1', name: 'Дракон 1 · двуногий', w: 62, h: 190,
-      view: [-52, -236, 100, 4], draw: dragon },
+      крылья: true, view: [-52, -236, 100, 4], draw: dragon },
     { id: 'dragon2', name: 'Дракон 2 · волк', w: 100, h: 140,
-      view: [-60, -158, 140, 6], draw: wolfdragon }
+      крылья: true, view: [-60, -158, 140, 6], draw: wolfdragon }
   ];
 
   var beastId = 'dragon1';
@@ -1007,6 +1160,14 @@ input[type=file] { display: none; }
   function drawHero() {
     ctx.save();
     ctx.translate(66, ground + hero.y);
+    // Ползком. Начало координат стоит на лапах, поэтому сжатие по
+    // вертикали прижимает дракона к земле, а не топит в ней. По
+    // горизонтали слегка растягиваем — так это читается как «распластался»,
+    // а не «уменьшился».
+    if (hero.низко > 0.002) {
+      var к = 1 - hero.низко * (1 - ПОЛЗКОМ);
+      ctx.scale(1 + hero.низко * 0.3, к);
+    }
     var running = state === 'run' && hero.onGround;
     if (slots.hero) {
       ctx.translate(HERO_W / 2, 0);
@@ -1019,7 +1180,22 @@ input[type=file] { display: none; }
 
   function drawThing(o) {
     ctx.save();
-    if (o.kind === 'bird') {
+    if (o.kind === 'arch') {
+      // Навес: свисающая сверху балка на двух опорах по краям, просвет
+      // внизу. Рисуем от нижнего края вверх.
+      var низ = o.y, выс = o.h, ш = o.w;
+      ctx.translate(o.x, 0);
+      // Рисунок повторяет рамку столкновений один в один: если
+      // нарисовать ажурную арку, а считать по прямоугольнику, игра
+      // будет убивать за пустоту между опорами.
+      ctx.fillStyle = mix([86, 70, 58], [44, 38, 34], night);
+      ctx.fillRect(0, низ - выс, ш, выс);
+      ctx.fillStyle = mix([104, 86, 70], [54, 46, 40], night);
+      ctx.fillRect(0, низ - выс, ш * 0.34, выс);
+      // Светлая кромка внизу — граница щели, в которую надо пролезть.
+      ctx.fillStyle = mix([150, 176, 150], [70, 86, 78], night);
+      ctx.fillRect(0, низ - 4, ш, 4);
+    } else if (o.kind === 'bird') {
       ctx.translate(o.x + o.w / 2, o.y + o.h / 2 + Math.sin(o.t * 6) * 5);
       if (slots.bird) {
         ctx.translate(0, o.h / 2);
@@ -1436,6 +1612,21 @@ input[type=file] { display: none; }
       }
     });
   }
+
+  /* Окошко наружу для автотестов. Всё остальное в игре спрятано внутри
+     функции, и снаружи не видно ни высоты героя, ни препятствий — а
+     проверять полёт по картинке на экране слишком хрупко. Только чтение,
+     ничего изменить отсюда нельзя. */
+  window.отладка = function () {
+    return {
+      состояние: state, y: hero.y, парит: hero.парит, цель: hero.цель,
+      низко: hero.низко, наЗемле: hero.onGround, ползёт: hero.ползёт,
+      земля: ground, очки: score, зверь: beastId,
+      вещи: things.map(function (o) {
+        return { вид: o.kind, x: Math.round(o.x), y: Math.round(o.y), w: o.w, h: o.h };
+      })
+    };
+  };
 
   fit();
   reset();
