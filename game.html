@@ -49,8 +49,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   padding: 0 10px;
   transition: opacity .25s ease;
 }
-#studio .slots { display: flex; justify-content: center; gap: 8px; }
-
 /* Список существ. Раскрывается вверх: он и так у нижнего края. */
 #beasts { position: relative; }
 #beastBtn {
@@ -103,24 +101,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #beastList canvas { width: 46px; height: 34px; flex: 0 0 auto; }
 #studio.hide { opacity: 0; pointer-events: none; }
 
-.slot {
-  flex: 0 0 auto;
-  width: 72px;
-  padding: 6px 4px 5px;
-  border: 1px solid #a9c9bd;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .82);
-  color: #2c4740;
-  font-size: 10px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  text-align: center;
-  cursor: pointer;
-}
-.slot canvas { width: 100%; height: 40px; }
-.slot span { display: block; margin-top: 2px; opacity: .7; }
-.slot:active { transform: scale(.95); }
-
 #msg {
   position: absolute;
   inset: 0;
@@ -136,8 +116,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #msg b { font-size: 26px; font-weight: 600; }
 #msg small { font-size: 14px; opacity: .7; }
 #msg.gone { display: none; }
-
-input[type=file] { display: none; }
 </style>
 </head>
 <body>
@@ -160,14 +138,7 @@ input[type=file] { display: none; }
       <button id="beastBtn"><canvas></canvas><b></b><i>▴</i></button>
       <div id="beastList" hidden></div>
     </div>
-    <div class="slots">
-      <button class="slot" data-slot="hero"><canvas></canvas><span>герой</span></button>
-      <button class="slot" data-slot="rock"><canvas></canvas><span>кочка</span></button>
-      <button class="slot" data-slot="bird"><canvas></canvas><span>летун</span></button>
-    </div>
   </div>
-
-  <input type="file" id="pick" accept="image/*">
 </div>
 
 <script>
@@ -201,8 +172,6 @@ input[type=file] { display: none; }
 
   var G = 2100;            // ускорение падения, px/с²
   var JUMP = -860;         // толчок вверх
-  var HERO_H = 190;        // рост героя
-  var HERO_W = 62;         // ширина, по которой считаются столкновения
 
   // Потолок полёта. Выше — уже за краем экрана, и препятствия там не
   // видно: пусть крылатый упирается в невидимую границу, а не улетает.
@@ -239,38 +208,6 @@ input[type=file] { display: none; }
       // к земле. Плавная величина 0..1, чтобы не дёргался.
       ползёт: false, низко: 0
     };
-  }
-
-  /* --- спрайты ---------------------------------------------------------
-     Слот пустой — персонажа рисует код. Загрузили картинку — она встаёт
-     на его место, а движение остаётся тем же: наклон, подскок, сжатие.
-     Так рисунок оживает, даже если он один-единственный. */
-  var slots = { hero: null, rock: null, bird: null };
-
-  // Герой по умолчанию. Пусто — значит рисует код: чужие рисунки в
-  // открытый репозиторий не кладём. Свой можно подставить сюда строкой
-  // data:image/png;base64,… или загрузить прямо в игре, через слот.
-  var DRAKON = '';
-
-  // ?code в адресе — показать всех, кого рисует код, не трогая слоты.
-  // Удобно дать ссылку и не объяснять, где что нажимать.
-  var CODE = /(^|[?&#])code\b/.test(location.search + location.hash);
-
-  function loadSlots() {
-    Object.keys(slots).forEach(function (k) {
-      if (CODE) { slots[k] = null; return; }
-      var src = null;
-      try { src = localStorage.getItem('run-sprite-' + k); } catch (e) { src = null; }
-      // 'none' — слот очищен намеренно. Без этой пометки при каждой
-      // загрузке в героя снова падал бы рисунок по умолчанию, и сброс
-      // жил только до перезагрузки.
-      if (src === 'none') { slots[k] = null; return; }
-      if (!src && k === 'hero') { src = DRAKON; }
-      if (!src) { return; }
-      var img = new Image();
-      img.onload = function () { slots[k] = img; drawChips(); };
-      img.src = src;
-    });
   }
 
   /* --- ввод ------------------------------------------------------------ */
@@ -312,7 +249,7 @@ input[type=file] { display: none; }
   var прошлыйТап = 0;
 
   function крылатый() {
-    return !slots.hero && beast().крылья !== false;
+    return beast().крылья !== false;
   }
 
   function вниз(y) {
@@ -409,9 +346,9 @@ input[type=file] { display: none; }
     // скорости он получается несправедливым.
     var flying = speed > 330 && Math.random() < 0.3;
     // Навес — низкая перекладина сверху: пройти можно только прижавшись
-    // к земле. Появляется тоже не сразу, чтобы первые секунды игры
-    // оставались простыми.
-    var навес = !flying && speed > 300 && Math.random() < 0.28;
+    // к земле или взяв верхом. Идёт с первой же секунды наравне с
+    // кочками: игра, в которой полминуты только прыгаешь, скучная.
+    var навес = !flying && Math.random() < 0.34;
     // Заслон в небе — там, где летают. Без него полёт делал бы игру
     // бессмысленной: поднялся повыше и лети над всем.
     var заслон = flying && Math.random() < 0.45;
@@ -510,8 +447,8 @@ input[type=file] { display: none; }
     if (spawnIn <= 0) { spawn(); }
 
     // У каждого существа своя стать, поэтому рамка берётся от него.
-    var bw = slots.hero ? HERO_W : beast().w;
-    var bh = slots.hero ? HERO_H : beast().h;
+    var bw = beast().w;
+    var bh = beast().h;
     // Прижатый занимает меньше по высоте — в этом весь смысл ползти
     // под навесом. Рамка обязана сжиматься вместе с рисунком, иначе
     // игра убивает за то, чего на экране не видно.
@@ -606,9 +543,9 @@ input[type=file] { display: none; }
      тело в разных позах, а не два разных рисунка.
 
      Система координат: (0,0) — земля под драконом, x вперёд, y вверх
-     отрицательный. Скелет уложен в ширину HERO_W: то, что торчит за неё
-     (морда, хвост, крылья), висит выше препятствий и в столкновениях
-     не участвует. */
+     отрицательный. Скелет уложен в ширину w из списка существ: то, что
+     торчит за неё (морда, хвост, крылья), висит выше препятствий и в
+     столкновениях не участвует. */
 
   var DR = {
     far:   '#3a2359',        // дальняя сторона тела — глубже в тень
@@ -1260,24 +1197,10 @@ input[type=file] { display: none; }
     return BEASTS[0];
   }
 
-  /* Рисунок из слота. Он неподвижный, поэтому оживляем его движением:
-     подскок, наклон вперёд и лёгкое сжатие в момент касания земли. */
-  function sprite(img, w, h, t, run) {
-    var k = w / img.width;
-    var hh = img.height * k;
-    if (hh > h) { k = h / img.height; hh = h; }
-    var ww = img.width * k;
-    var bob = run ? Math.sin(t * 12) * 3 : 0;
-    var tilt = run ? Math.sin(t * 12) * 0.06 : 0;
-    var squash = run ? 1 + Math.sin(t * 24) * 0.03 : 1;
-    ctx.rotate(tilt);
-    ctx.drawImage(img, -ww / 2, -hh * squash + bob, ww, hh * squash);
-  }
-
   function drawHero() {
     ctx.save();
     ctx.translate(66, ground + hero.y);
-    var сам = !slots.hero && beast().сам_ляжет;
+    var сам = beast().сам_ляжет;
     // Ползком. Кто умеет укладываться сам — тот и укладывается: у змея
     // шея уходит вперёд, а не просто сплющивается. Остальным (и чужому
     // рисунку) поза не нарисована, поэтому им остаётся сжатие: начало
@@ -1289,12 +1212,7 @@ input[type=file] { display: none; }
       ctx.scale(1 + hero.низко * 0.3, к);
     }
     var running = state === 'run' && hero.onGround;
-    if (slots.hero) {
-      ctx.translate(HERO_W / 2, 0);
-      sprite(slots.hero, HERO_W + 24, HERO_H + 8, hero.t, running);
-    } else {
-      beast().draw(hero.t, running, hero.fly, -hero.y, сам ? hero.низко : 0);
-    }
+    beast().draw(hero.t, running, hero.fly, -hero.y, сам ? hero.низко : 0);
     ctx.restore();
   }
 
@@ -1317,46 +1235,37 @@ input[type=file] { display: none; }
       ctx.fillRect(0, низ - 4, ш, 4);
     } else if (o.kind === 'bird') {
       ctx.translate(o.x + o.w / 2, o.y + o.h / 2 + Math.sin(o.t * 6) * 5);
-      if (slots.bird) {
-        ctx.translate(0, o.h / 2);
-        sprite(slots.bird, o.w + 10, o.h + 12, o.t, true);
-      } else {
-        var flap = Math.sin(o.t * 14) * 9;
-        ctx.fillStyle = '#6b5b8f';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 15, 8, 0, 0, 6.3);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(-2, -2);
-        ctx.lineTo(-18, -6 - flap);
-        ctx.lineTo(-2, 5);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(2, -2);
-        ctx.lineTo(16, -8 + flap);
-        ctx.lineTo(4, 4);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(9, -2, 2, 0, 6.3);
-        ctx.fill();
-      }
+      var flap = Math.sin(o.t * 14) * 9;
+      ctx.fillStyle = '#6b5b8f';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 15, 8, 0, 0, 6.3);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-2, -2);
+      ctx.lineTo(-18, -6 - flap);
+      ctx.lineTo(-2, 5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(2, -2);
+      ctx.lineTo(16, -8 + flap);
+      ctx.lineTo(4, 4);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(9, -2, 2, 0, 6.3);
+      ctx.fill();
     } else {
       ctx.translate(o.x + o.w / 2, o.y);
-      if (slots.rock) {
-        sprite(slots.rock, o.w + 14, o.h + 10, 0, false);
-      } else {
-        ctx.fillStyle = mix([90, 122, 88], [46, 62, 54], night);
-        ctx.beginPath();
-        ctx.moveTo(-o.w / 2, 0);
-        ctx.quadraticCurveTo(-o.w / 3, -o.h, 0, -o.h);
-        ctx.quadraticCurveTo(o.w / 3, -o.h, o.w / 2, 0);
-        ctx.fill();
-        ctx.fillStyle = mix([120, 156, 116], [60, 78, 68], night);
-        ctx.beginPath();
-        ctx.ellipse(0, -o.h, o.w / 2, 7, 0, 0, 6.3);
-        ctx.fill();
-      }
+      ctx.fillStyle = mix([90, 122, 88], [46, 62, 54], night);
+      ctx.beginPath();
+      ctx.moveTo(-o.w / 2, 0);
+      ctx.quadraticCurveTo(-o.w / 3, -o.h, 0, -o.h);
+      ctx.quadraticCurveTo(o.w / 3, -o.h, o.w / 2, 0);
+      ctx.fill();
+      ctx.fillStyle = mix([120, 156, 116], [60, 78, 68], night);
+      ctx.beginPath();
+      ctx.ellipse(0, -o.h, o.w / 2, 7, 0, 0, 6.3);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -1387,262 +1296,6 @@ input[type=file] { display: none; }
     things.forEach(drawThing);
     drawHero();
   }
-
-  /* --- мастерская: рисунок превращается в спрайт ------------------------
-     Всё считается прямо в браузере, ничего никуда не уходит.
-
-     Наивный порог по яркости здесь не работает: фото с телефона почти
-     всегда неровное — один край листа светлее другого, и любая
-     постоянная граница либо съедает рисунок, либо оставляет полкадра.
-
-     Поэтому по порядку:
-       1. уменьшить
-       2. поделить каждый пиксель на яркость бумаги ВОКРУГ него —
-          после этого бумага везде равна единице
-       3. тёмное = линии рисунка
-       4. выбросить пятна, упирающиеся в край кадра:
-          пружины блокнота, тень, край стола
-       5. замкнуть силуэт: линии толстеют, потом худеют обратно —
-          рисунок от руки всегда с разрывами, и без этого заливка
-          вытекает наружу
-       6. снаружи прозрачно, внутри — ровная белая заливка
-  */
-
-  function normalize(lum, w, h) {
-    // Таблица сумм: среднее по любому прямоугольнику берётся за четыре
-    // обращения, каким бы большим он ни был.
-    var acc = new Float64Array((w + 1) * (h + 1));
-    for (var y = 0; y < h; y++) {
-      var line = 0;
-      for (var x = 0; x < w; x++) {
-        line += lum[y * w + x];
-        acc[(y + 1) * (w + 1) + x + 1] = acc[y * (w + 1) + x + 1] + line;
-      }
-    }
-    var r = Math.max(8, Math.round(Math.max(w, h) / 8));
-    var out = new Float32Array(w * h);
-    for (var yy = 0; yy < h; yy++) {
-      var y0 = Math.max(0, yy - r), y1 = Math.min(h, yy + r + 1);
-      for (var xx = 0; xx < w; xx++) {
-        var x0 = Math.max(0, xx - r), x1 = Math.min(w, xx + r + 1);
-        var sum = acc[y1 * (w + 1) + x1] - acc[y0 * (w + 1) + x1]
-                - acc[y1 * (w + 1) + x0] + acc[y0 * (w + 1) + x0];
-        var bg = sum / ((y1 - y0) * (x1 - x0));
-        out[yy * w + xx] = bg > 0.02 ? lum[yy * w + xx] / bg : 1;
-      }
-    }
-    return out;
-  }
-
-  // Квадратное ядро раскладывается на два прохода — сначала по строкам,
-  // потом по столбцам. Это тот же результат, но во много раз быстрее.
-  function spread(src, w, h, r, grow) {
-    var a = new Uint8Array(w * h), b = new Uint8Array(w * h);
-    var hit = grow ? 1 : 0;
-    for (var y = 0; y < h; y++) {
-      for (var x = 0; x < w; x++) {
-        var v = grow ? 0 : 1;
-        for (var d = -r; d <= r; d++) {
-          var xx = x + d;
-          if (xx < 0 || xx >= w) { continue; }
-          if (src[y * w + xx] === hit) { v = hit; break; }
-        }
-        a[y * w + x] = v;
-      }
-    }
-    for (var x2 = 0; x2 < w; x2++) {
-      for (var y2 = 0; y2 < h; y2++) {
-        var v2 = grow ? 0 : 1;
-        for (var d2 = -r; d2 <= r; d2++) {
-          var yy = y2 + d2;
-          if (yy < 0 || yy >= h) { continue; }
-          if (a[yy * w + x2] === hit) { v2 = hit; break; }
-        }
-        b[y2 * w + x2] = v2;
-      }
-    }
-    return b;
-  }
-
-  function cutout(img, done) {
-    var MAXP = 240;
-    var k = Math.min(MAXP / img.width, MAXP / img.height, 1);
-    var w = Math.max(1, Math.round(img.width * k));
-    var h = Math.max(1, Math.round(img.height * k));
-    var c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    var g = c.getContext('2d');
-    g.drawImage(img, 0, 0, w, h);
-    var px = g.getImageData(0, 0, w, h).data;
-
-    var n = w * h;
-    var lum = new Float32Array(n);
-    for (var i = 0; i < n; i++) {
-      // Зелёный глазу заметнее синего — отсюда неравные доли.
-      lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587
-              + px[i * 4 + 2] * 0.114) / 255;
-    }
-    var nrm = normalize(lum, w, h);
-
-    var DARK = 0.80, LIGHT = 0.90;
-    var mask = new Uint8Array(n);
-    for (var m = 0; m < n; m++) { mask[m] = nrm[m] < DARK ? 1 : 0; }
-
-    // Пятна, доходящие до края кадра, — не рисунок. Их стираем совсем,
-    // иначе тень проступит в спрайте серой полосой.
-    var seen = new Uint8Array(n);
-    var stack = new Int32Array(n);
-    var cells = new Int32Array(n);
-    var x0 = w, y0 = h, x1 = -1, y1 = -1, found = false;
-
-    for (var s0 = 0; s0 < n; s0++) {
-      if (seen[s0] || !mask[s0]) { continue; }
-      var top = 0, cnt = 0, edge = false;
-      stack[top++] = s0; seen[s0] = 1;
-      while (top) {
-        var p = stack[--top];
-        cells[cnt++] = p;
-        var x = p % w, y = (p / w) | 0;
-        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { edge = true; }
-        if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack[top++] = p - 1; }
-        if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack[top++] = p + 1; }
-        if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; stack[top++] = p - w; }
-        if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; stack[top++] = p + w; }
-      }
-      if (edge) {
-        for (var e = 0; e < cnt; e++) { mask[cells[e]] = 0; nrm[cells[e]] = 1; }
-        continue;
-      }
-      // Рамку считаем только по заметным пятнам: пылинка в углу листа
-      // не должна растягивать спрайт на весь лист.
-      if (cnt < 3) { continue; }
-      found = true;
-      for (var b = 0; b < cnt; b++) {
-        var bx = cells[b] % w, by = (cells[b] / w) | 0;
-        if (bx < x0) { x0 = bx; }
-        if (by < y0) { y0 = by; }
-        if (bx > x1) { x1 = bx; }
-        if (by > y1) { y1 = by; }
-      }
-    }
-    if (!found) { return done(null); }
-
-    var pad = 3;
-    x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
-    x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
-    var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
-
-    var solid = spread(spread(mask, w, h, 8, true), w, h, 8, false);
-
-    // Снаружи — всё, до чего удалось дойти от края, не пересекая линий.
-    var outside = new Uint8Array(cw * ch);
-    var q = new Int32Array(cw * ch);
-    var qn = 0;
-
-    function push(x, y) {
-      if (x < 0 || y < 0 || x >= cw || y >= ch) { return; }
-      var j = y * cw + x;
-      if (outside[j] || solid[(y + y0) * w + (x + x0)]) { return; }
-      outside[j] = 1;
-      q[qn++] = j;
-    }
-    for (var fx = 0; fx < cw; fx++) { push(fx, 0); push(fx, ch - 1); }
-    for (var fy = 0; fy < ch; fy++) { push(0, fy); push(cw - 1, fy); }
-    for (var qi = 0; qi < qn; qi++) {
-      var pp = q[qi], px2 = pp % cw, py2 = (pp / cw) | 0;
-      push(px2 - 1, py2); push(px2 + 1, py2); push(px2, py2 - 1); push(px2, py2 + 1);
-    }
-
-    var out = document.createElement('canvas');
-    out.width = cw; out.height = ch;
-    var og = out.getContext('2d');
-    var dst = og.createImageData(cw, ch);
-    for (var oy = 0; oy < ch; oy++) {
-      for (var ox = 0; ox < cw; ox++) {
-        var j2 = oy * cw + ox;
-        var v = nrm[(oy + y0) * w + (ox + x0)];
-        // Внутри персонажа бумага становится ровной белой заливкой:
-        // серость и клетка тетради в игре ни к чему.
-        var ink = Math.max(0, Math.min(1, (LIGHT - v) / (LIGHT - DARK)));
-        var tone = Math.round(255 - ink * 215);
-        dst.data[j2 * 4] = dst.data[j2 * 4 + 1] = dst.data[j2 * 4 + 2] = tone;
-        // Снаружи прозрачно, но линия на самой границе гаснет плавно —
-        // иначе край получается пилой.
-        dst.data[j2 * 4 + 3] = outside[j2] ? Math.round(Math.min(1, ink * 1.6) * 255) : 255;
-      }
-    }
-    og.putImageData(dst, 0, 0);
-    done(out.toDataURL('image/png'));
-  }
-
-  var pick = document.getElementById('pick');
-  var picking = null;
-
-  var cleared = false;   // слот только что сбросили долгим нажатием
-
-  document.getElementById('studio').addEventListener('click', function (e) {
-    var b = e.target.closest('.slot');
-    if (!b) { return; }
-    // После сброса браузер всё равно досылает click — иначе следом
-    // открывался бы выбор файла, которого никто не просил.
-    if (cleared) { cleared = false; return; }
-    picking = b.dataset.slot;
-    pick.value = '';
-    pick.click();
-  });
-
-  pick.addEventListener('change', function () {
-    var file = pick.files && pick.files[0];
-    if (!file || !picking) { return; }
-    var fr = new FileReader();
-    fr.onload = function () {
-      var img = new Image();
-      img.onload = function () {
-        cutout(img, function (url) {
-          if (!url) { return; }
-          var s = new Image();
-          s.onload = function () {
-            slots[picking] = s;
-            try { localStorage.setItem('run-sprite-' + picking, url); }
-            catch (err) { /* места нет — персонаж живёт до перезагрузки */ }
-            drawChips();
-          };
-          s.src = url;
-        });
-      };
-      img.onerror = function () { /* не картинка — молча выходим */ };
-      img.src = fr.result;
-    };
-    fr.readAsDataURL(file);
-  });
-
-  // Долгое нажатие по слоту возвращает нарисованного кодом персонажа.
-  [].forEach.call(document.querySelectorAll('.slot'), function (b) {
-    var t = null;
-    b.addEventListener('pointerdown', function () {
-      t = setTimeout(function () {
-        t = null;
-        var k = b.dataset.slot;
-        var was = null;
-        try { was = localStorage.getItem('run-sprite-' + k); } catch (e) { /**/ }
-        slots[k] = null;
-        try {
-          // Долгое нажатие переключает: рисунок -> нарисованный кодом
-          // -> обратно к рисунку по умолчанию.
-          if (was === 'none') { localStorage.removeItem('run-sprite-' + k); }
-          else { localStorage.setItem('run-sprite-' + k, 'none'); }
-        } catch (e) { /**/ }
-        if (was === 'none') { loadSlots(); }
-        drawChips();
-        picking = null;
-        cleared = true;
-      }, 650);
-    });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
-      b.addEventListener(ev, function () { if (t) { clearTimeout(t); t = null; } });
-    });
-  });
-
 
   /* --- выбор существа ---------------------------------------------------
      Превью рисуются тем же кодом, что и сама игра, поэтому картинка на
@@ -1718,32 +1371,6 @@ input[type=file] { display: none; }
     }
   });
 
-  // Кружочки-превью на кнопках: видно, кто сейчас в каком слоте.
-  function drawChips() {
-    [].forEach.call(document.querySelectorAll('.slot'), function (b) {
-      var c = b.querySelector('canvas');
-      var d = Math.min(window.devicePixelRatio || 1, 2);
-      c.width = 64 * d; c.height = 40 * d;
-      var g = c.getContext('2d');
-      g.setTransform(d, 0, 0, d, 0, 0);
-      g.clearRect(0, 0, 64, 40);
-      var img = slots[b.dataset.slot];
-      if (img) {
-        var k = Math.min(60 / img.width, 38 / img.height);
-        g.drawImage(img, (64 - img.width * k) / 2, (40 - img.height * k) / 2,
-                    img.width * k, img.height * k);
-      } else {
-        var off = false;
-        try { off = localStorage.getItem('run-sprite-' + b.dataset.slot) === 'none'; }
-        catch (e) { off = false; }
-        g.fillStyle = off ? '#7d55c6' : '#9fbdb0';
-        g.font = '11px sans-serif';
-        g.textAlign = 'center';
-        g.fillText(off || CODE ? 'код' : 'свой', 32, 24);
-      }
-    });
-  }
-
   /* Окошко наружу для автотестов. Всё остальное в игре спрятано внутри
      функции, и снаружи не видно ни высоты героя, ни препятствий — а
      проверять полёт по картинке на экране слишком хрупко. Только чтение,
@@ -1761,8 +1388,6 @@ input[type=file] { display: none; }
 
   fit();
   reset();
-  loadSlots();
-  drawChips();
   paintPicker();
   document.getElementById('best').textContent = 'рекорд ' + best;
   requestAnimationFrame(frame);
