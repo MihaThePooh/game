@@ -29,7 +29,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   left: 0; right: 0;
   display: flex;
   gap: 14px;
-  padding: 0 14px;
+  /* Слева отступ под бургер: без него счёт прячется под кнопку. */
+  padding: 12px 14px 0 calc(68px + env(safe-area-inset-left));
   font-variant-numeric: tabular-nums;
   font-size: 15px;
   color: #2c4740;
@@ -37,69 +38,121 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 }
 #best { margin-left: auto; opacity: .65; }
 
-/* Панель со сменой персонажей. Прячется во время бега, чтобы не мешать. */
-#studio {
+/* Бургер. Единственная кнопка на экране, поэтому крупная и тёмная:
+   ребёнок должен видеть её сразу, а не искать. */
+#burger {
   position: absolute;
-  left: 0; right: 0;
-  bottom: calc(10px + env(safe-area-inset-bottom));
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(10px + env(safe-area-inset-left));
+  width: 46px; height: 46px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  transition: opacity .25s ease;
-}
-/* Список существ. Раскрывается вверх: он и так у нижнего края. */
-#beasts { position: relative; }
-#beastBtn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 10px 4px 5px;
-  border: 1px solid #a9c9bd;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .88);
-  color: #2c4740;
-  font: inherit;
-  font-size: 13px;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: #2c4740;
+  box-shadow: 0 4px 12px rgba(20, 50, 40, .28);
   cursor: pointer;
 }
-#beastBtn canvas { width: 46px; height: 34px; }
-#beastBtn i { font-style: normal; opacity: .5; font-size: 11px; }
-#beastBtn:active { transform: scale(.97); }
+#burger span { width: 22px; height: 3px; border-radius: 2px; background: #eaf5f0; }
+#burger:active { transform: scale(.94); }
 
-#beastList {
+/* Само меню. Затемнение на весь экран, карточка по центру. */
+#menu {
   position: absolute;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-  min-width: 168px;
-  max-height: 46vh;
-  overflow: auto;
-  padding: 5px;
-  border: 1px solid #a9c9bd;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 10px 26px rgba(20, 50, 40, .18);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(18, 40, 34, .42);
+  z-index: 5;
 }
-#beastList button {
+#menu[hidden] { display: none; }
+#menuBox {
+  width: 100%;
+  max-width: 340px;
+  max-height: 86%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: #f4faf7;
+  box-shadow: 0 18px 46px rgba(15, 40, 32, .3);
+  overflow: hidden;
+}
+.mhead {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 4px 8px 4px 4px;
+  padding: 10px 10px 10px 12px;
+  border-bottom: 1px solid #dbe9e3;
+}
+.mhead b { flex: 1; font-size: 16px; font-weight: 600; }
+.mhead button {
+  width: 32px; height: 32px;
   border: 0;
   border-radius: 9px;
-  background: none;
+  background: #e3f0ea;
   color: #2c4740;
   font: inherit;
-  font-size: 13px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mhead button[hidden] { display: none; }
+#mbody { padding: 8px; overflow: auto; }
+
+/* Строка списка: превью слева, название справа. */
+.mrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #22312c;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
-#beastList button.on { background: #e3f0ea; }
-#beastList canvas { width: 46px; height: 34px; flex: 0 0 auto; }
-#studio.hide { opacity: 0; pointer-events: none; }
+.mrow:last-child { margin-bottom: 0; }
+.mrow.on { background: #e3f0ea; }
+.mrow canvas { width: 62px; height: 46px; flex: 0 0 auto; }
+.mrow i { margin-left: auto; font-style: normal; opacity: .35; }
+.mrow small { display: block; opacity: .6; font-size: 12px; }
+
+/* Карточка существа. */
+.mcard canvas { width: 100%; height: 120px; }
+.mcard p { margin: 6px 2px 12px; font-size: 14px; line-height: 1.45; }
+.mcard h4 {
+  margin: 0 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  opacity: .5;
+}
+.mcard dl { margin: 0 0 14px; font-size: 14px; }
+.mcard dt { font-weight: 600; }
+.mcard dd { margin: 0 0 7px; opacity: .72; }
+.mplay {
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: #2c4740;
+  color: #eaf5f0;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.mplay:disabled { background: #cfe0d8; color: #6a8279; }
 
 #msg {
   position: absolute;
@@ -133,10 +186,16 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     <small style="opacity:.45">версия 3 · полёт и ползком</small>
   </div>
 
-  <div id="studio">
-    <div id="beasts">
-      <button id="beastBtn"><canvas></canvas><b></b><i>▴</i></button>
-      <div id="beastList" hidden></div>
+  <button id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
+
+  <div id="menu" hidden>
+    <div id="menuBox">
+      <div class="mhead">
+        <button id="mback" hidden aria-label="Назад">&#8249;</button>
+        <b id="mtitle">Меню</b>
+        <button id="mclose" aria-label="Закрыть">&times;</button>
+      </div>
+      <div id="mbody"></div>
     </div>
   </div>
 </div>
@@ -253,6 +312,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   }
 
   function вниз(y) {
+    if (state === 'pause') { return; }         // открыто меню — мир стоит
     if (state !== 'run') { jump(); return; }   // из меню и с экрана «конец»
 
     var теперь = Date.now();
@@ -322,8 +382,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     reset();
     state = 'run';
     document.getElementById('msg').className = 'gone';
-    document.getElementById('studio').className = 'hide';
-    beastList.hidden = true;
+    закрытьМеню();
     last = 0;
   }
 
@@ -336,7 +395,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     var m = document.getElementById('msg');
     m.className = '';
     m.innerHTML = '<b>' + score + '</b><small>рекорд ' + best + ' · тап — ещё раз</small>';
-    document.getElementById('studio').className = '';
   }
 
   /* --- препятствия ----------------------------------------------------- */
@@ -1173,18 +1231,50 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
      Каждая версия остаётся здесь навсегда: выбранная запоминается, к
      прошлой всегда можно вернуться. view — рамка, по которой считается
      превью на кнопке. */
+  var КРЫЛАТЫЕ = [
+    ['тап', 'прыжок с земли'],
+    ['тап в воздухе', 'переходит в ровный полёт'],
+    ['ведёшь пальцем', 'вверх — выше, вниз — ниже'],
+    ['отпустил', 'падает'],
+    ['навес', 'только сверху, перелететь']
+  ];
+
+  var БЕСКРЫЛЫЕ = [
+    ['держишь палец', 'ложится и ползёт'],
+    ['двойной тап', 'прыжок'],
+    ['навес', 'только понизу, проползти'],
+    ['летун', 'тоже проползти под ним']
+  ];
+
   var BEASTS = [
     // крылья решают управление: с крыльями второе нажатие переходит в
     // ровный полёт, без крыльев одиночное нажатие прижимает к земле.
+    // про и как — то, что показывает меню; сюда же, чтобы описание не
+    // разъехалось с тем, кто нарисован.
     { id: 'dragon1', name: 'Дракон 1 · двуногий', w: 62, h: 190,
-      крылья: true, view: [-52, -236, 100, 4], draw: dragon },
+      крылья: true, view: [-52, -236, 100, 4], draw: dragon,
+      про: 'Первый и самый высокий. Собран не из готовых фигур, а из ' +
+           'костей: у каждой свой угол и длина, и каждая следующая растёт ' +
+           'оттуда, где кончилась предыдущая. Поэтому бег и полёт у него — ' +
+           'одно тело в разных позах, а не два разных рисунка.',
+      как: КРЫЛАТЫЕ },
     { id: 'dragon2', name: 'Дракон 2 · волк', w: 100, h: 140,
-      крылья: true, view: [-60, -158, 140, 6], draw: wolfdragon },
+      крылья: true, view: [-60, -158, 140, 6], draw: wolfdragon,
+      про: 'Пониже и пошире: четыре лапы, волчий хвост и крылья. Ниже ' +
+           'ростом, значит и щель под навесом ему нужна меньше — игра ' +
+           'считает её от роста, а не одним числом на всех.',
+      как: КРЫЛАТЫЕ },
     { id: 'lego', name: 'Дракон 3 · лего', w: 96, h: 150,
       // сам_ляжет — у него нарисована отдельная поза ползком, поэтому
       // общее сжатие к нему не применяется.
       крылья: false, сам_ляжет: true,
-      view: [-44, -168, 172, 10], draw: legodragon }
+      view: [-44, -168, 172, 10], draw: legodragon,
+      про: 'Собран по фотографии постройки Алисы: фиолетовый змей без ' +
+           'лап и без крыльев, зелёный глаз, оранжевая морда. Рисуется ' +
+           'одними прямоугольниками — он из кубиков. Летать не умеет, ' +
+           'зато умеет то, чего не умеют другие: укладывается на землю и ' +
+           'ползёт, вытянув шею вперёд.',
+      как: БЕСКРЫЛЫЕ }
   ];
 
   var beastId = 'dragon1';
@@ -1300,9 +1390,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   /* --- выбор существа ---------------------------------------------------
      Превью рисуются тем же кодом, что и сама игра, поэтому картинка на
      кнопке не может разойтись с тем, кого увидишь на поле. */
-  function paintBeast(c, b) {
+  function paintBeast(c, b, cw, ch) {
     var d = Math.min(window.devicePixelRatio || 1, 2);
-    var cw = 46, ch = 34;
+    cw = cw || 62; ch = ch || 46;
     c.width = Math.round(cw * d);
     c.height = Math.round(ch * d);
     var g = c.getContext('2d');
@@ -1318,13 +1408,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     g.translate(cw / 2 - (b.view[0] + b.view[2]) / 2 * k,
                 ch / 2 - (b.view[1] + b.view[3]) / 2 * k);
     g.scale(k, k);
-    b.draw(0.35, false, 0, 0);
+    b.draw(0.35, false, 0, 0, 0);
     g.restore();
     ctx = save;
   }
-
-  var beastBtn = document.getElementById('beastBtn');
-  var beastList = document.getElementById('beastList');
 
   /* Подсказка под заголовком. У крылатых и бескрылого управление разное,
      и одна общая строчка врала бы половине зверей. */
@@ -1336,40 +1423,145 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
       : 'держи — ползёт, двойной тап — прыжок';
   }
 
-  function paintPicker() {
-    подсказка();
-    paintBeast(beastBtn.querySelector('canvas'), beast());
-    beastBtn.querySelector('b').textContent = beast().name;
-    beastList.innerHTML = '';
-    BEASTS.forEach(function (b) {
-      var row = document.createElement('button');
-      if (b.id === beastId) { row.className = 'on'; }
-      var c = document.createElement('canvas');
-      var lab = document.createElement('span');
-      lab.textContent = b.name;
-      row.appendChild(c);
-      row.appendChild(lab);
-      row.onclick = function (e) {
-        e.stopPropagation();
-        beastId = b.id;
-        try { localStorage.setItem('run-beast', b.id); } catch (er) { /**/ }
-        beastList.hidden = true;
-        paintPicker();
-      };
-      beastList.appendChild(row);
-      paintBeast(c, b);      // размеры холста известны только после вставки
-    });
+  /* --- меню -------------------------------------------------------------
+     Три экрана в одной карточке: корень, список существ, карточка
+     существа. Храним только имя экрана и, если нужно, чьё существо
+     открыто, — а разметку каждый раз собираем заново. Так не бывает
+     состояния «кнопка назад показана, а возвращаться некуда».
+
+     Меню открывается и во время бега: тогда игра встаёт на паузу.
+     Иначе, пока читаешь про дракона, тебя убивает камень. */
+  var menu = document.getElementById('menu');
+  var mbody = document.getElementById('mbody');
+  var mtitle = document.getElementById('mtitle');
+  var mback = document.getElementById('mback');
+  var экран = 'корень';
+  var открытоСущество = null;
+  var былБег = false;
+
+  function элемент(тег, класс, текст) {
+    var e = document.createElement(тег);
+    if (класс) { e.className = класс; }
+    if (текст) { e.textContent = текст; }
+    return e;
   }
 
-  beastBtn.onclick = function (e) {
-    e.stopPropagation();
-    beastList.hidden = !beastList.hidden;
-  };
-  document.addEventListener('pointerdown', function (e) {
-    if (!beastList.hidden && !document.getElementById('beasts').contains(e.target)) {
-      beastList.hidden = true;
+  function строка(текст, подпись, вперёд) {
+    var b = элемент('button', 'mrow');
+    var box = элемент('span');
+    box.appendChild(элемент('span', null, текст));
+    if (подпись) { box.appendChild(элемент('small', null, подпись)); }
+    b.appendChild(box);
+    if (вперёд) { b.appendChild(элемент('i', null, '›')); }
+    return b;
+  }
+
+  function рисоватьМеню() {
+    mbody.innerHTML = '';
+    mback.hidden = (экран === 'корень');
+
+    if (экран === 'корень') {
+      mtitle.textContent = 'Меню';
+      var с = строка('Существа', beast().name, true);
+      с.onclick = function () { экран = 'существа'; рисоватьМеню(); };
+      mbody.appendChild(с);
+      return;
     }
-  });
+
+    if (экран === 'существа') {
+      mtitle.textContent = 'Существа';
+      BEASTS.forEach(function (b) {
+        var row = элемент('button', 'mrow' + (b.id === beastId ? ' on' : ''));
+        var c = элемент('canvas');
+        var box = элемент('span');
+        box.appendChild(элемент('span', null, b.name));
+        box.appendChild(элемент('small', null,
+          b.крылья === false ? 'без крыльев · ползает' : 'с крыльями · летает'));
+        row.appendChild(c);
+        row.appendChild(box);
+        row.appendChild(элемент('i', null, '›'));
+        row.onclick = function () {
+          открытоСущество = b.id;
+          экран = 'существо';
+          рисоватьМеню();
+        };
+        mbody.appendChild(row);
+        paintBeast(c, b);      // размеры холста известны только после вставки
+      });
+      return;
+    }
+
+    // Карточка существа.
+    var b2 = BEASTS[0];
+    BEASTS.forEach(function (x) { if (x.id === открытоСущество) { b2 = x; } });
+    mtitle.textContent = b2.name;
+
+    var карта = элемент('div', 'mcard');
+    var big = элемент('canvas');
+    карта.appendChild(big);
+    карта.appendChild(элемент('p', null, b2.про));
+    карта.appendChild(элемент('h4', null, 'Механика'));
+
+    var dl = элемент('dl');
+    b2.как.forEach(function (пара) {
+      dl.appendChild(элемент('dt', null, пара[0]));
+      dl.appendChild(элемент('dd', null, пара[1]));
+    });
+    карта.appendChild(dl);
+
+    var играть = элемент('button', 'mplay');
+    var выбран = (b2.id === beastId);
+    играть.textContent = выбран ? 'Уже выбран' : 'Играть за него';
+    играть.disabled = выбран;
+    играть.onclick = function () {
+      beastId = b2.id;
+      try { localStorage.setItem('run-beast', b2.id); } catch (e) { /**/ }
+      подсказка();
+      // Смена существа меняет рост, а от роста считаются щели в
+      // препятствиях — те, что уже на поле, посчитаны под прежнего.
+      // Поэтому забег начинаем заново, а не подменяем героя на ходу.
+      былБег = false;
+      state = 'menu';
+      reset();
+      document.getElementById('msg').className = '';
+      document.getElementById('msg').innerHTML =
+        '<b>Драконий бег</b><small id="как"></small>' +
+        '<small style="opacity:.45">версия 3 · полёт и ползком</small>';
+      подсказка();
+      закрытьМеню();
+    };
+    карта.appendChild(играть);
+
+    mbody.appendChild(карта);
+    paintBeast(big, b2, 300, 120);
+  }
+
+  function открытьМеню() {
+    // Пауза: во время чтения мир стоять обязан.
+    былБег = (state === 'run');
+    if (былБег) { state = 'pause'; }
+    экран = 'корень';
+    menu.hidden = false;
+    рисоватьМеню();
+  }
+
+  function закрытьМеню() {
+    menu.hidden = true;
+    if (былБег) {
+      былБег = false;
+      state = 'run';
+      last = 0;              // иначе на паузе накопится огромный dt
+    }
+  }
+
+  document.getElementById('burger').onclick = открытьМеню;
+  document.getElementById('mclose').onclick = закрытьМеню;
+  mback.onclick = function () {
+    экран = (экран === 'существо') ? 'существа' : 'корень';
+    рисоватьМеню();
+  };
+  // Тап по затемнению вокруг карточки — тоже закрыть.
+  menu.onclick = function (e) { if (e.target === menu) { закрытьМеню(); } };
 
   /* Окошко наружу для автотестов. Всё остальное в игре спрятано внутри
      функции, и снаружи не видно ни высоты героя, ни препятствий — а
@@ -1388,7 +1580,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   fit();
   reset();
-  paintPicker();
+  подсказка();
   document.getElementById('best').textContent = 'рекорд ' + best;
   requestAnimationFrame(frame);
 }());
