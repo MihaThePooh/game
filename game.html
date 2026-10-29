@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#dff0ea">
 <title>Драконий бег</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -123,6 +126,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 }
 .mrow:last-child { margin-bottom: 0; }
 .mrow.on { background: #e3f0ea; }
+.mrow.install { background: #e3f0ea; }
 .mrow canvas { width: 62px; height: 46px; flex: 0 0 auto; }
 .mrow i { margin-left: auto; font-style: normal; opacity: .35; }
 .mrow small { display: block; opacity: .6; font-size: 12px; }
@@ -1462,9 +1466,19 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
     if (экран === 'корень') {
       mtitle.textContent = 'Меню';
+      if (!installed()) {
+        var inst = строка('Установить игру', 'Иконка на экране телефона', false);
+        inst.className += ' install';
+        inst.onclick = function () { install(inst); };
+        mbody.appendChild(inst);
+      }
       var с = строка('Существа', beast().name, true);
       с.onclick = function () { экран = 'существа'; рисоватьМеню(); };
       mbody.appendChild(с);
+      // Открыли игру своей иконкой, а нужно другое приложение — до хаба одно нажатие.
+      var hub = строка('Все приложения (хаб)', null, false);
+      hub.onclick = function () { location.href = HUB_URL; };
+      mbody.appendChild(hub);
       return;
     }
 
@@ -1534,6 +1548,39 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
     mbody.appendChild(карта);
     paintBeast(big, b2, 300, 120);
+  }
+
+  /* --- установка на телефон ---
+     Chrome присылает beforeinstallprompt, когда готов поставить игру; окно
+     открыть можно только по нажатию. Не прислал (недавно отказались, другой
+     браузер, игра открыта с диска) — подсказываем пункт его меню. */
+  var HUB_URL = 'https://hub.michaelperov.com/';
+  var offer = null;
+  function standalone() {
+    return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  }
+  function installed() {
+    try { return standalone() || localStorage.getItem('run-installed') === '1'; } catch (e) { return standalone(); }
+  }
+  function markInstalled() {
+    try { localStorage.setItem('run-installed', '1'); } catch (e) { /**/ }
+  }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); offer = e; });
+  window.addEventListener('appinstalled', markInstalled);
+  function install(row) {
+    if (!offer) {
+      row.querySelector('small').textContent = 'Chrome сейчас не предлагает сам: ⋮ в углу → «Добавить на главный экран»';
+      return;
+    }
+    закрытьМеню();
+    offer.prompt();
+    offer.userChoice.then(function (r) {
+      if (r.outcome === 'accepted') { markInstalled(); }
+      offer = null;
+    });
+  }
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* без офлайна, не беда */ });
   }
 
   function открытьМеню() {
