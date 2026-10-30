@@ -3,7 +3,8 @@
    Сеть вперёд, кэш запасной: обновления приходят сами, последняя версия
    работает офлайн. */
 var CACHE = 'run-v2';
-var SHELL = ['./', 'icons/icon-192.png', 'icons/icon-512.png'];
+// run-N.js — скрипты страницы, их выносит scripts/stage.py: без них офлайн нечем играть.
+var SHELL = ['./', 'run-1.js', 'run-2.js', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(

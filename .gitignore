@@ -3,3 +3,4 @@
 art/
 __pycache__/
 *.pyc
+dist/
