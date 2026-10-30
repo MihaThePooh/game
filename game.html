@@ -190,7 +190,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   <div id="msg">
     <b>Драконий бег</b>
     <small id="как">тап или пробел — прыжок</small>
-    <small style="opacity:.45">версия 4 · вход через хаб</small>
+    <small style="opacity:.45">версия 5 · вход через хаб</small>
   </div>
 
   <button id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
@@ -1553,7 +1553,7 @@ window.игра = function () {
       document.getElementById('msg').className = '';
       document.getElementById('msg').innerHTML =
         '<b>Драконий бег</b><small id="как"></small>' +
-        '<small style="opacity:.45">версия 4 · вход через хаб</small>';
+        '<small style="opacity:.45">версия 5 · вход через хаб</small>';
       подсказка();
       закрытьМеню();
     };
@@ -1568,29 +1568,33 @@ window.игра = function () {
      открыть можно только по нажатию. Не прислал (недавно отказались, другой
      браузер, игра открыта из хаба во встроенной вкладке) — подсказываем
      пункт его меню.
-     «Установлено» — догадка: иконку убирают с телефона без ведома страницы.
-     Поэтому метку стирает новое предложение Chrome, а где Chrome умеет — он
-     сам отвечает по related_applications из манифеста. */
+     «Установлено» пишем, только когда это видно: открыто с иконки, Chrome
+     сам ответил по related_applications из манифеста, или установили только
+     что. Раньше метка жила в localStorage и переживала удаление иконки: во
+     вкладке из хаба Chrome установку не предлагает, стереть её было нечем
+     (30.10.2026). */
   var offer = null;
+  var known = false;
+  try { localStorage.removeItem('run-installed'); } catch (e) { /**/ }
   function standalone() {
     return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   }
   function installed() {
-    try { return standalone() || localStorage.getItem('run-installed') === '1'; } catch (e) { return standalone(); }
+    return standalone() || known;
   }
   function markInstalled() {
-    try { localStorage.setItem('run-installed', '1'); } catch (e) { /**/ }
+    known = true;
   }
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     offer = e;
-    try { localStorage.removeItem('run-installed'); } catch (err) { /**/ }
+    known = false;
   });
   window.addEventListener('appinstalled', markInstalled);
   if (navigator.getInstalledRelatedApps) {
     navigator.getInstalledRelatedApps()
       .then(function (list) { if (list.length) { markInstalled(); } })
-      .catch(function () { /* не умеет — остаёмся на метке */ });
+      .catch(function () { /* не умеет — считаем, что не установлено */ });
   }
   function install(row) {
     if (!offer) {
