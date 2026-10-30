@@ -190,7 +190,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   <div id="msg">
     <b>Драконий бег</b>
     <small id="как">тап или пробел — прыжок</small>
-    <small style="opacity:.45">версия 5 · вход через хаб</small>
+    <small style="opacity:.45">версия 6 · вход через хаб</small>
   </div>
 
   <button id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
@@ -1553,7 +1553,7 @@ window.игра = function () {
       document.getElementById('msg').className = '';
       document.getElementById('msg').innerHTML =
         '<b>Драконий бег</b><small id="как"></small>' +
-        '<small style="opacity:.45">версия 5 · вход через хаб</small>';
+        '<small style="opacity:.45">версия 6 · вход через хаб</small>';
       подсказка();
       закрытьМеню();
     };
@@ -1576,8 +1576,22 @@ window.игра = function () {
   var offer = null;
   var known = false;
   try { localStorage.removeItem('run-installed'); } catch (e) { /**/ }
+  // Открыто с иконки — только если запуск пришёл через start_url с меткой
+  // ?installed (манифест). Чужая страница, открытая из окна установленного
+  // хаба, тоже отвечает display-mode: standalone — окно-то хабовское, и меню
+  // писало «установлено» там, где ничего не стоит (30.10.2026).
+  var LAUNCH = 'run.launched';
+  try {
+    var launchUrl = new URL(location.href);
+    if (launchUrl.searchParams.has('installed')) {
+      sessionStorage.setItem(LAUNCH, '1');
+      launchUrl.searchParams.delete('installed');
+      history.replaceState(history.state, '', launchUrl.href);
+    }
+  } catch (e) { /* приват — считаем, что не с иконки */ }
   function standalone() {
-    return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    var app = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    try { return app && sessionStorage.getItem(LAUNCH) === '1'; } catch (e) { return false; }
   }
   function installed() {
     return standalone() || known;
