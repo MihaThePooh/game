@@ -2,7 +2,7 @@
    сети. Игра — один файл, так что кэшировать почти нечего.
    Сеть вперёд, кэш запасной: обновления приходят сами, последняя версия
    работает офлайн. */
-var CACHE = 'run-v1';
+var CACHE = 'run-v2';
 var SHELL = ['./', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', function (e) {
@@ -24,7 +24,9 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== self.location.origin) { return; }
+  // Сохранение на сервере — всегда свежее, из кэша его не отдавать.
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin ||
+      url.pathname.indexOf('/api/') === 0) { return; }
   e.respondWith(
     fetch(e.request).then(function (res) {
       var copy = res.clone();

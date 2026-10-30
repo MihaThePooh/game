@@ -2,6 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<meta name="hub-id" content="">
+<meta name="hub-home" content="">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#dff0ea">
 <title>Драконий бег</title>
@@ -127,6 +129,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .mrow:last-child { margin-bottom: 0; }
 .mrow.on { background: #e3f0ea; }
 .mrow.install { background: #e3f0ea; }
+.mrow.install.done { background: none; cursor: default; }
 .mrow canvas { width: 62px; height: 46px; flex: 0 0 auto; }
 .mrow i { margin-left: auto; font-style: normal; opacity: .35; }
 .mrow small { display: block; opacity: .6; font-size: 12px; }
@@ -187,7 +190,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   <div id="msg">
     <b>Драконий бег</b>
     <small id="как">тап или пробел — прыжок</small>
-    <small style="opacity:.45">версия 3 · полёт и ползком</small>
+    <small style="opacity:.45">версия 4 · вход через хаб</small>
   </div>
 
   <button id="burger" aria-label="Меню"><span></span><span></span><span></span></button>
@@ -205,7 +208,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 </div>
 
 <script>
-(function () {
+/* Сама игра. Запускает её облако ниже — после того, как рекорд и дракон
+   сверены с сервером: иначе первый кадр показал бы чужой или старый рекорд. */
+window.игра = function () {
   'use strict';
 
   var cv = document.getElementById('game');
@@ -395,6 +400,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     if (score > best) {
       best = score;
       try { localStorage.setItem('run-best', String(best)); } catch (e) { /* приват — не беда */ }
+      window.облако.сохранить();
     }
     var m = document.getElementById('msg');
     m.className = '';
@@ -1466,19 +1472,25 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
     if (экран === 'корень') {
       mtitle.textContent = 'Меню';
-      if (!installed()) {
-        var inst = строка('Установить игру', 'Иконка на экране телефона', false);
-        inst.className += ' install';
-        inst.onclick = function () { install(inst); };
-        mbody.appendChild(inst);
-      }
+      // Пункт установки есть всегда: стоит игра — так и пишем, а не прячем.
+      var готово = installed() && !offer;
+      var inst = строка(готово ? 'Игра установлена' : 'Установить игру', 'Иконка на экране телефона', false);
+      inst.className += ' install' + (готово ? ' done' : '');
+      inst.disabled = готово;
+      if (!готово) { inst.onclick = function () { install(inst); }; }
+      mbody.appendChild(inst);
       var с = строка('Существа', beast().name, true);
       с.onclick = function () { экран = 'существа'; рисоватьМеню(); };
       mbody.appendChild(с);
       // Открыли игру своей иконкой, а нужно другое приложение — до хаба одно нажатие.
       var hub = строка('Все приложения (хаб)', null, false);
-      hub.onclick = function () { location.href = HUB_URL; };
+      hub.onclick = function () { location.href = window.облако.дом; };
       mbody.appendChild(hub);
+      if (window.облако.вошли) {
+        var out = строка('Выйти', null, false);
+        out.onclick = function () { out.disabled = true; window.облако.выйти(); };
+        mbody.appendChild(out);
+      }
       return;
     }
 
@@ -1530,6 +1542,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     играть.onclick = function () {
       beastId = b2.id;
       try { localStorage.setItem('run-beast', b2.id); } catch (e) { /**/ }
+      window.облако.сохранить();
       подсказка();
       // Смена существа меняет рост, а от роста считаются щели в
       // препятствиях — те, что уже на поле, посчитаны под прежнего.
@@ -1540,7 +1553,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
       document.getElementById('msg').className = '';
       document.getElementById('msg').innerHTML =
         '<b>Драконий бег</b><small id="как"></small>' +
-        '<small style="opacity:.45">версия 3 · полёт и ползком</small>';
+        '<small style="opacity:.45">версия 4 · вход через хаб</small>';
       подсказка();
       закрытьМеню();
     };
@@ -1553,8 +1566,11 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   /* --- установка на телефон ---
      Chrome присылает beforeinstallprompt, когда готов поставить игру; окно
      открыть можно только по нажатию. Не прислал (недавно отказались, другой
-     браузер, игра открыта с диска) — подсказываем пункт его меню. */
-  var HUB_URL = 'https://hub.michaelperov.com/';
+     браузер, игра открыта из хаба во встроенной вкладке) — подсказываем
+     пункт его меню.
+     «Установлено» — догадка: иконку убирают с телефона без ведома страницы.
+     Поэтому метку стирает новое предложение Chrome, а где Chrome умеет — он
+     сам отвечает по related_applications из манифеста. */
   var offer = null;
   function standalone() {
     return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -1565,18 +1581,28 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   function markInstalled() {
     try { localStorage.setItem('run-installed', '1'); } catch (e) { /**/ }
   }
-  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); offer = e; });
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    offer = e;
+    try { localStorage.removeItem('run-installed'); } catch (err) { /**/ }
+  });
   window.addEventListener('appinstalled', markInstalled);
+  if (navigator.getInstalledRelatedApps) {
+    navigator.getInstalledRelatedApps()
+      .then(function (list) { if (list.length) { markInstalled(); } })
+      .catch(function () { /* не умеет — остаёмся на метке */ });
+  }
   function install(row) {
     if (!offer) {
-      row.querySelector('small').textContent = 'Chrome сейчас не предлагает сам: ⋮ в углу → «Добавить на главный экран»';
+      row.querySelector('small').textContent = 'Chrome сейчас не предлагает сам: ⋮ в углу → «Добавить на главный экран». ' +
+        'Открыто из хаба — сначала ⋮ → «Открыть в Chrome».';
       return;
     }
     закрытьМеню();
     offer.prompt();
     offer.userChoice.then(function (r) {
-      if (r.outcome === 'accepted') { markInstalled(); }
       offer = null;
+      if (r.outcome === 'accepted') { markInstalled(); }
     });
   }
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
@@ -1630,6 +1656,150 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   подсказка();
   document.getElementById('best').textContent = 'рекорд ' + best;
   requestAnimationFrame(frame);
+};
+</script>
+<script>
+/* Облако: вход через хаб и сохранение на сервере.
+
+   Играть можно только со входом: без пропуска и сеанса страница уходит
+   на вход хаба. Сохраняется немного — рекорд и выбранный дракон. Рабочая
+   копия в localStorage: с ней игра идёт и без сети. На сервере рекорд
+   только растёт, поэтому два устройства одного аккаунта не спорят:
+   остаётся больший. Открыли файл с диска — играем без хаба, как раньше. */
+(function () {
+  'use strict';
+
+  var BEST = 'run-best', BEAST = 'run-beast';
+  var OWNER = 'run-owner';   // чья копия на этом устройстве
+  var DIRTY = 'run-dirty';   // '1' — изменения ещё не на сервере
+
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function set(k, v) {
+    try { if (v === null) { localStorage.removeItem(k); } else { localStorage.setItem(k, v); } }
+    catch (e) { /* приват — играем без памяти */ }
+  }
+
+  // Адреса хаба: из <meta name="hub-id|hub-home">, если страница их задала
+  // (так делает пробный стенд), иначе game.example.com -> id.example.com.
+  function hubUrl(name, sub) {
+    var meta = document.querySelector('meta[name="' + name + '"]');
+    if (meta && meta.content) { return meta.content.replace(/\/$/, ''); }
+    return location.protocol + '//' + location.hostname.replace(/^[^.]+/, sub);
+  }
+  var ID_URL = hubUrl('hub-id', 'id');
+  var HOME_URL = hubUrl('hub-home', 'hub');
+
+  function loginUrl() {
+    return HOME_URL + '/?app=game&next=' + encodeURIComponent(location.href);
+  }
+
+  // Несколько запросов на просроченном пропуске ждут одно обновление.
+  var renewing = null;
+  function renewPass() {
+    if (!renewing) {
+      renewing = fetch(ID_URL + '/api/auth/refresh', { method: 'POST', credentials: 'include' })
+        .then(function (r) { renewing = null; return r.ok; },
+              function () { renewing = null; return false; });
+    }
+    return renewing;
+  }
+
+  // 401 — короткий пропуск истёк, 403 — пропуск выдан до того, как игра
+  // вошла в хаб. Оба лечатся новым пропуском: берём и повторяем один раз.
+  // Без 403 тут страница ходила бы по кругу через вход (филворд, 30.10.2026).
+  var NEED_LOGIN = 'need-login';
+  function api(method, body) {
+    var opts = { method: method, credentials: 'same-origin', cache: 'no-store', headers: {} };
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    function denied(r) { return r.status === 401 || r.status === 403; }
+    return fetch('/api/save', opts).then(function (r) {
+      if (!denied(r)) { return r; }
+      return renewPass().then(function (ok) { return ok ? fetch('/api/save', opts) : r; });
+    }).then(function (r) {
+      if (denied(r)) { throw new Error(NEED_LOGIN); }
+      return r;
+    });
+  }
+
+  function localBest() { return parseInt(get(BEST) || '0', 10) || 0; }
+
+  var owner = null;
+  var sending = null;
+
+  // Отправить, что есть на устройстве. Сервер вернёт больший из рекордов.
+  function push() {
+    if (!owner) { return Promise.resolve(); }
+    if (sending) { return sending.then(push); }
+    set(DIRTY, '1');
+    sending = api('PUT', { best: localBest(), beast: get(BEAST) || 'dragon1' })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('save ' + r.status); }
+        return r.json();
+      })
+      .then(function (saved) {
+        if (saved.best > localBest()) { set(BEST, String(saved.best)); }
+        set(DIRTY, null);
+      })
+      .catch(function (err) {
+        if (err.message === NEED_LOGIN) { location.replace(loginUrl()); }
+        // Нет сети — копия остаётся помеченной, уйдёт со следующим сохранением.
+      })
+      .then(function () { sending = null; });
+    return sending;
+  }
+
+  window.облако = {
+    вошли: false,
+    дом: HOME_URL + '/',
+    // Игра записала рекорд или дракона в localStorage — отправить на сервер.
+    сохранить: push,
+    // Вход общий на все приложения хаба. Сначала неотправленное, потом копия
+    // на устройстве стирается: следующий, кто войдёт, не увидит чужой рекорд.
+    выйти: function () {
+      var first = get(DIRTY) === '1' ? push() : Promise.resolve();
+      return first.then(function () {
+        if (get(DIRTY) !== '1') { [BEST, BEAST, OWNER, DIRTY].forEach(function (k) { set(k, null); }); }
+        return fetch(ID_URL + '/api/auth/logout', { method: 'POST', credentials: 'include' })
+          .catch(function () { /* сеть — выйдем всё равно */ });
+      }).then(function () { location.replace(HOME_URL + '/'); });
+    }
+  };
+
+  if (location.protocol === 'file:') { window.игра(); return; }
+
+  addEventListener('online', function () { if (get(DIRTY) === '1') { push(); } });
+
+  api('GET').then(function (r) {
+    if (!r.ok) { throw new Error('load ' + r.status); }
+    return r.json();
+  }).then(function (server) {
+    owner = server.owner;
+    window.облако.вошли = true;
+    var save = server.save;
+    var mine = get(OWNER);
+    if (mine && mine !== owner) {
+      // Копия на устройстве — от другого аккаунта: она не наша.
+      [BEST, BEAST, DIRTY].forEach(function (k) { set(k, null); });
+    }
+    // Копия без хозяина — рекорд, набранный до входа через хаб: он тоже идёт на сервер.
+    var unsent = get(DIRTY) === '1' || (!mine && localBest() > 0);
+    if (save) {
+      if (save.best > localBest()) { set(BEST, String(save.best)); }
+      if (!unsent || !get(BEAST)) { set(BEAST, save.beast); }
+    }
+    set(OWNER, owner);
+    if (unsent || (save && localBest() > save.best)) { push(); }
+    window.игра();
+  }, function (err) {
+    if (err.message === NEED_LOGIN) { location.replace(loginUrl()); return; }
+    // Сервер не ответил (нет сети): играем по копии, на сервер она уйдёт позже.
+    owner = get(OWNER);
+    window.облако.вошли = !!owner;
+    window.игра();
+  });
 }());
 </script>
 </body>
