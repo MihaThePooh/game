@@ -130,6 +130,12 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .mrow.on { background: #e3f0ea; }
 .mrow.install { background: #e3f0ea; }
 .mrow.install.done { background: none; cursor: default; }
+/* Пришли из хаба по кнопке «Установить» — подсветить пункт. */
+.mrow.install.pulse { animation: installpulse 1.1s ease-out 2; }
+@keyframes installpulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(47, 111, 78, 0); }
+  35% { box-shadow: 0 0 0 4px rgba(47, 111, 78, .35); }
+}
 .mrow canvas { width: 62px; height: 46px; flex: 0 0 auto; }
 .mrow i { margin-left: auto; font-style: normal; opacity: .35; }
 .mrow small { display: block; opacity: .6; font-size: 12px; }
@@ -1653,6 +1659,25 @@ window.игра = function () {
   };
   // Тап по затемнению вокруг карточки — тоже закрыть.
   menu.onclick = function (e) { if (e.target === menu) { закрытьМеню(); } };
+
+  // Пришли из хаба по кнопке «Установить» (?install): открываем меню на пункте
+  // установки и подсвечиваем его — дальше одно нажатие. Сам диалог установки
+  // браузер открывает только по нажатию, авто-вызвать его из загрузки нельзя.
+  try {
+    var iu = new URL(location.href);
+    if (iu.searchParams.has('install')) {
+      iu.searchParams.delete('install');
+      history.replaceState(history.state, '', iu.href);
+      if (!installed()) {
+        открытьМеню();
+        var irow = menu.querySelector('.mrow.install');
+        if (irow) {
+          irow.classList.add('pulse');
+          setTimeout(function () { irow.classList.remove('pulse'); }, 2400);
+        }
+      }
+    }
+  } catch (e) { /* приват — просто откроется игра */ }
 
   /* Окошко наружу для автотестов. Всё остальное в игре спрятано внутри
      функции, и снаружи не видно ни высоты героя, ни препятствий — а
